@@ -58,7 +58,12 @@ def _substitute_dict(d: dict) -> dict:
 def load_config(path: str = None) -> AppConfig:
     if path is None:
         path = Path(__file__).parent.parent / "config.yaml"
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Config file not found: {path}")
     with open(path) as f:
         raw = yaml.safe_load(f)
+    if raw is None:
+        raise ValueError(f"Config file is empty or invalid: {path}")
     raw = _substitute_dict(raw)
     return AppConfig.from_dict(raw)
