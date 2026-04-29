@@ -92,3 +92,101 @@ class TestFTS5Store:
             time.sleep(0.01)
         recent = store.get_recent(limit=3)
         assert len(recent) == 3
+
+
+class TestVectorStore:
+    def setup_method(self):
+        import tempfile
+        self.tmpdir = tempfile.mkdtemp()
+
+    def teardown_method(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_add_and_search(self):
+        from src.memory.vector_store import VectorStore
+        store = VectorStore(self.tmpdir)
+        store.add("Python 异步编程的最佳实践", {"id": "1"})
+        store.add("今天午饭吃了炒面", {"id": "2"})
+        store.add("asyncio 和 await 的使用方法", {"id": "3"})
+
+        results = store.search("Python 异步", top_k=2)
+        assert len(results) == 2
+        # "Python 异步编程" and "asyncio" should be top matches
+        ids = [r["metadata"]["id"] for r in results]
+        assert "1" in ids or "3" in ids
+
+    def test_empty_store_search(self):
+        from src.memory.vector_store import VectorStore
+        store = VectorStore(self.tmpdir)
+        results = store.search("anything")
+        assert results == []
+
+    def test_max_entries_eviction(self):
+        from src.memory.vector_store import VectorStore
+        store = VectorStore(self.tmpdir, max_entries=3)
+        store.add("entry 1", {"n": 1})
+        store.add("entry 2", {"n": 2})
+        store.add("entry 3", {"n": 3})
+        store.add("entry 4", {"n": 4})  # should evict oldest
+        assert store.count() <= 3
+
+    def test_delete_by_filter(self):
+        from src.memory.vector_store import VectorStore
+        store = VectorStore(self.tmpdir)
+        store.add("doc about python", {"category": "tech", "id": "1"})
+        store.add("doc about cooking", {"category": "food", "id": "2"})
+        store.add("doc about javascript", {"category": "tech", "id": "3"})
+
+        # Delete all tech category entries
+        deleted = store.delete(lambda m: m.get("category") == "tech")
+        assert deleted == 2
+        assert store.count() == 1
+        # Only food entry remains
+        results = store.search("cooking")
+        assert len(results) == 1
+        assert results[0]["metadata"]["category"] == "food"
+
+    def test_delete_no_match(self):
+        from src.memory.vector_store import VectorStore
+        store = VectorStore(self.tmpdir)
+        store.add("test entry", {"id": "1"})
+        deleted = store.delete(lambda m: m.get("id") == "999")
+        assert deleted == 0
+        assert store.count() == 1
+
+    def test_clear_all(self):
+        from src.memory.vector_store import VectorStore
+        store = VectorStore(self.tmpdir)
+        store.add("entry 1", {"id": "1"})
+        store.add("entry 2", {"id": "2"})
+        store.clear()
+        assert store.count() == 0
+        results = store.search("entry")
+        assert results == []
+
+    def test_persistence(self):
+        from src.memory.vector_store import VectorStore
+        # First store
+        store1 = VectorStore(self.tmpdir)
+        store1.add("persistent entry", {"id": "p1", "tag": "important"})
+        count1 = store1.count()
+
+        # Second store (same directory) should load existing data
+        store2 = VectorStore(self.tmpdir)
+        assert store2.count() == count1
+        results = store2.search("persistent")
+        assert len(results) == 1
+        assert results[0]["metadata"]["id"] == "p1"
+
+    def test_metadata_preserved(self):
+        from src.memory.vector_store import VectorStore
+        store = VectorStore(self.tmpdir)
+        store.add("text content", {"key1": "value1", "key2": "value2", "nested": {"a": 1}})
+        results = store.search("text content")
+        assert len(results) == 1
+        meta = results[0]["metadata"]
+        assert meta["key1"] == "value1"
+        assert meta["key2"] == "value2"
+        assert meta["nested"]["a"] == 1
+        assert "_text" in meta
