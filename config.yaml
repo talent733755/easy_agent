@@ -1,0 +1,32 @@
+providers:
+  openai:
+    type: openai
+    api_key: "${OPENAI_API_KEY}"
+    base_url: "https://api.openai.com/v1"
+    default_model: "gpt-4.1"
+
+  zhipu:
+    type: openai_compatible
+    api_key: "${ZHIPU_API_KEY}"
+    base_url: "https://open.bigmodel.cn/api/paas/v4"
+    default_model: "glm-4-plus"
+
+  anthropic:
+    type: anthropic
+    api_key: "${ANTHROPIC_API_KEY}"
+    default_model: "claude-sonnet-4-6"
+
+active_provider: "zhipu"
+fallback_provider: "openai"
+
+agent:
+  max_iterations: 15
+  context_compression_threshold: 0.7
+  memory_nudge_interval: 10
+
+memory:
+  data_dir: "~/.easy_agent"
+  memory_md_max_chars: 2000
+  user_md_max_chars: 1500
+  fts5_retention_days: 90
+  vector_max_entries: 500
