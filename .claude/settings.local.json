@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip show:*)",
+      "Bash(pip index:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(gh repo:*)",
+      "WebSearch",
+      "Bash(pip install:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(python3 -c \"import yaml; yaml.safe_load\\(open\\(''config.yaml''\\)\\)\")",
+      "Bash(python:*)",
+      "Bash(unset HTTP_PROXY)",
+      "Bash(unset HTTPS_PROXY)",
+      "Bash(unset http_proxy)",
+      "Bash(unset https_proxy)"
+    ]
+  }
+}

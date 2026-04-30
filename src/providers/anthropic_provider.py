@@ -17,4 +17,5 @@ class AnthropicProvider(BaseProvider):
         return ChatAnthropic(
             model=model_name or self.config["default_model"],
             api_key=self.config["api_key"],
+            timeout=self.config.get("timeout", 60),
         )

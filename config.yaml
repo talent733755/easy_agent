@@ -4,17 +4,28 @@ providers:
     api_key: "${OPENAI_API_KEY}"
     base_url: "https://api.openai.com/v1"
     default_model: "gpt-4o"
+    timeout: 60
 
   zhipu:
     type: openai_compatible
     api_key: "${ZHIPU_API_KEY}"
     base_url: "https://open.bigmodel.cn/api/paas/v4"
     default_model: "glm-4-plus"
+    timeout: 60
 
   anthropic:
     type: anthropic
     api_key: "${ANTHROPIC_API_KEY}"
     default_model: "claude-sonnet-4-6"
+    timeout: 60
+
+  # 自定义代理示例 - 支持 OpenAI 兼容的 API
+  # codingplan:
+  #   type: openai_compatible
+  #   api_key: "${CODINGPLAN_API_KEY}"
+  #   base_url: "https://your-proxy-url.com/v1"
+  #   default_model: "gpt-4o"
+  #   timeout: 120
 
 active_provider: "zhipu"
 fallback_provider: "openai"

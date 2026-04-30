@@ -18,4 +18,5 @@ class OpenAIProvider(BaseProvider):
             model=model_name or self.config["default_model"],
             base_url=self.config.get("base_url"),
             api_key=self.config["api_key"],
+            timeout=self.config.get("timeout", 60),
         )
