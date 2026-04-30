@@ -19,15 +19,15 @@ providers:
     default_model: "claude-sonnet-4-6"
     timeout: 60
 
-  # 自定义代理示例 - 支持 OpenAI 兼容的 API
-  # codingplan:
-  #   type: openai_compatible
-  #   api_key: "${CODINGPLAN_API_KEY}"
-  #   base_url: "https://your-proxy-url.com/v1"
-  #   default_model: "gpt-4o"
-  #   timeout: 120
+  #自定义代理示例 - 支持 Anthropic 兼容的 API
+  codingplan:
+    type: anthropic
+    api_key: "72a2c58f08bd030d67ea4e84d5a92631:ZDk1OGRlN2NkMjU5YTg5MGYxNDJjMDUy"
+    base_url: "https://maas-coding-api.cn-huabei-1.xf-yun.com"
+    default_model: "astron-code-latest"
+    timeout: 120
 
-active_provider: "zhipu"
+active_provider: "codingplan"
 fallback_provider: "openai"
 
 agent:
