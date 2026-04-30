@@ -35,12 +35,16 @@ def print_banner():
 """)
 
 
-def handle_command(user_input: str, state: dict) -> tuple[bool, str]:
-    """Handle slash commands. Returns (should_quit, response)."""
+def handle_command(user_input: str, state: dict) -> tuple[bool, str, bool]:
+    """Handle slash commands. Returns (should_quit, response, is_command)."""
+    # Only process commands that start with /
+    if not user_input.startswith("/"):
+        return False, "", False
+
     cmd = user_input.strip().lower()
 
     if cmd in ("/quit", "/exit", "/q"):
-        return True, "Goodbye!"
+        return True, "Goodbye!", True
     elif cmd in ("/help", "/h"):
         return False, """
 Commands:
@@ -50,19 +54,26 @@ Commands:
   /profile       — Show current USER.md
   /session       — Show session ID
   /clear         — Start a new session
-"""
+""", True
     elif cmd == "/memory":
         from src.memory.file_memory import FileMemory
         config = load_config()
         fm = FileMemory(config.memory["data_dir"])
-        return False, f"MEMORY.md:\n{fm.read_memory() or '(empty)'}"
+        return False, f"MEMORY.md:\n{fm.read_memory() or '(empty)'}", True
     elif cmd == "/profile":
         from src.memory.file_memory import FileMemory
         config = load_config()
         fm = FileMemory(config.memory["data_dir"])
-        return False, f"USER.md:\n{fm.read_user() or '(empty)'}"
+        return False, f"USER.md:\n{fm.read_user() or '(empty)'}", True
+    elif cmd == "/session":
+        import uuid
+        return False, f"Session ID: {state.get('session_id', 'unknown')}", True
+    elif cmd == "/clear":
+        state["messages"] = []
+        state["iteration_count"] = 0
+        return False, "Session cleared. Starting fresh.", True
     else:
-        return False, f"Unknown command: {cmd}"
+        return False, f"Unknown command: {cmd}", True
 
 
 def run_agent(args):
@@ -109,11 +120,11 @@ def run_agent(args):
             break
 
         # Handle commands
-        should_quit, response = handle_command(user_input, state)
+        should_quit, response, is_command = handle_command(user_input, state)
         if should_quit:
             print(response)
             break
-        if response:
+        if is_command:
             print(f"\n{response}")
             continue
 
