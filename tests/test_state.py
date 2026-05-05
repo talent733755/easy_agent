@@ -34,3 +34,38 @@ def test_agent_state_defaults():
     assert state["max_iterations"] == 15
     assert state["nudge_counter"] == 0
     assert state["pending_human_input"] is False
+
+
+def test_state_has_beauty_fields():
+    """State should include intent, customer_context, knowledge_results, mcp_results."""
+    # Check annotations exist for beauty fields
+    annotations = AgentState.__annotations__
+
+    beauty_fields = ["intent", "customer_context", "knowledge_results", "mcp_results"]
+    for field in beauty_fields:
+        assert field in annotations, f"Missing beauty field: {field}"
+
+    # Verify AgentState can be constructed with beauty fields
+    state: AgentState = {
+        "messages": [],
+        "tools": [],
+        "context_window": {"used_tokens": 0, "max_tokens": 128000, "threshold": 0.7},
+        "memory_context": "",
+        "user_profile": "",
+        "agent_notes": "",
+        "pending_human_input": False,
+        "iteration_count": 0,
+        "max_iterations": 15,
+        "nudge_counter": 0,
+        "provider_name": "openai",
+        # New fields
+        "intent": "",
+        "customer_context": {},
+        "knowledge_results": [],
+        "mcp_results": {},
+    }
+
+    assert state["intent"] == ""
+    assert state["customer_context"] == {}
+    assert state["knowledge_results"] == []
+    assert state["mcp_results"] == {}

@@ -40,3 +40,14 @@ def test_load_config_fallback_defaults():
         assert config.agent["max_iterations"] == 15
     finally:
         os.unlink(tmp_path)
+
+
+def test_load_beauty_config():
+    """Config should load beauty section."""
+    config = load_config()
+
+    assert config.beauty is not None
+    assert config.beauty.knowledge_base.base_dir == "./knowledge/jiaolifu"
+    assert "products" in config.beauty.knowledge_base.indexes
+    assert config.beauty.mcp_servers["customer"].url == "http://localhost:3001"
+    assert config.beauty.web.port == 8080

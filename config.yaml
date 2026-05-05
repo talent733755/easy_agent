@@ -23,12 +23,16 @@ providers:
   codingplan:
     type: anthropic
     api_key: "72a2c58f08bd030d67ea4e84d5a92631:ZDk1OGRlN2NkMjU5YTg5MGYxNDJjMDUy"
-    base_url: "https://maas-coding-api.cn-huabei-1.xf-yun.com"
+    base_url: "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2"
     default_model: "astron-code-latest"
     timeout: 120
 
 active_provider: "codingplan"
 fallback_provider: "openai"
+
+search:
+  provider: "tavily"
+  tavily_api_key: "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"
 
 agent:
   max_iterations: 15
@@ -41,3 +45,32 @@ memory:
   user_md_max_chars: 1500
   fts5_retention_days: 90
   vector_max_entries: 500
+
+# 美容行业配置
+beauty:
+  knowledge_base:
+    base_dir: "./knowledge/jiaolifu"
+    indexes:
+      products:
+        path: "products"
+        description: "产品知识、成分功效"
+      procedures:
+        path: "procedures"
+        description: "服务流程、操作标准"
+      scripts:
+        path: "scripts"
+        description: "销售话术、接待标准"
+      troubleshooting:
+        path: "troubleshooting"
+        description: "问题处理、应急方案"
+
+  mcp_servers:
+    customer:
+      url: "http://localhost:3001"
+      timeout: 30
+
+  intent_prompt: "./prompts/beauty_intent_v1.txt"
+
+  web:
+    host: "0.0.0.0"
+    port: 8080

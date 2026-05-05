@@ -15,3 +15,9 @@ class AgentState(TypedDict):
     max_iterations: int            # 最大循环轮数
     nudge_counter: int             # 自我进化触发计数
     provider_name: str             # 当前使用的 LLM 提供商
+
+    # Phase 1: Beauty Agent 新增字段
+    intent: str                    # 识别意图: query_customer | knowledge_query | mixed
+    customer_context: dict         # 当前客户信息缓存
+    knowledge_results: list        # RAG 检索结果
+    mcp_results: dict              # MCP 调用结果
