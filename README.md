@@ -10,6 +10,8 @@ A Hermes-style intelligent agent built with LangGraph for learning agent orchest
 - **Human-in-the-Loop**: Dangerous operation confirmation
 - **Multi-Provider**: OpenAI, Anthropic, ZhiPu AI, and custom proxies
 - **Self-Evolution**: Simplified nudge engine for auto memory updates
+- **Web Interface**: Real-time WebSocket chat with FastAPI backend
+- **Beauty Agent**: Industry-specific agent with intent classification, knowledge RAG, and MCP integration
 
 ## Quick Start
 
@@ -20,10 +22,14 @@ pip install -r requirements.txt
 # Set API key
 export ZHIPU_API_KEY="your-api-key"
 
-# Run
+# Run CLI
 python main.py --provider zhipu
 python main.py --provider openai --model gpt-4o
 python main.py --provider anthropic --model claude-sonnet-4-6
+
+# Run Web Interface
+python web_app.py
+# Open http://localhost:8080 in your browser
 ```
 
 ## Configuration
@@ -62,6 +68,124 @@ active_provider: "my_proxy"
 - `openai`: OpenAI 官方 API
 - `openai_compatible`: 兼容 OpenAI API 的代理服务
 - `anthropic`: Anthropic Claude API
+
+## Web Interface
+
+Start the web interface for real-time chat:
+
+```bash
+# Start web server
+python web_app.py --host 0.0.0.0 --port 8080
+
+# With auto-reload for development
+python web_app.py --reload
+```
+
+### WebSocket API
+
+Connect to `ws://localhost:8080/ws` for real-time chat:
+
+```javascript
+// Connect
+const ws = new WebSocket('ws://localhost:8080/ws');
+
+// Receive session info
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  if (data.type === 'session') {
+    console.log('Session ID:', data.session_id);
+  }
+};
+
+// Send message
+ws.send(JSON.stringify({type: 'message', content: '你好'}));
+
+// Handle response
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  if (data.type === 'response') {
+    console.log('Agent:', data.content);
+  }
+};
+```
+
+### Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show available commands |
+| `/memory` | Show MEMORY.md content |
+| `/profile` | Show USER.md content |
+| `/session` | Show current session ID |
+| `/clear` | Start a new session |
+
+## Beauty Agent
+
+The Beauty Agent is an industry-specific extension for beauty salon customer service:
+
+### Features
+
+- **Intent Classification**: Automatically classifies queries into customer lookup, knowledge query, mixed, or general
+- **Knowledge RAG**: Retrieves relevant information from product, procedure, script, and troubleshooting knowledge bases
+- **MCP Integration**: Connects to Customer MCP server for real-time customer data lookup
+
+### Architecture
+
+```
+User Query → Intent Classify → [Knowledge Retrieve] → Memory Retrieve → Agent → Response
+                              ↘ [MCP Customer]     ↗
+```
+
+### Starting MCP Server
+
+The Customer MCP server provides customer data:
+
+```bash
+# Start Customer MCP server
+cd mcp_servers/customer
+python main.py --port 3001
+```
+
+### Configuration
+
+Add beauty configuration to `config.yaml`:
+
+```yaml
+beauty:
+  knowledge_base:
+    base_dir: "./knowledge/jiaolifu"
+    indexes:
+      products:
+        path: "products"
+        description: "产品知识、成分功效"
+      procedures:
+        path: "procedures"
+        description: "服务流程、操作标准"
+      scripts:
+        path: "scripts"
+        description: "销售话术、接待标准"
+      troubleshooting:
+        path: "troubleshooting"
+        description: "问题处理、应急方案"
+
+  mcp_servers:
+    customer:
+      url: "http://localhost:3001"
+      timeout: 30
+
+  intent_prompt: "./prompts/beauty_intent_v1.txt"
+
+  web:
+    host: "0.0.0.0"
+    port: 8080
+```
+
+### Example Queries
+
+- **Customer Lookup**: "查一下张女士的档案"
+- **Knowledge Query**: "推荐适合油性皮肤的护肤产品"
+- **Mixed Query**: "张女士上次做了什么项目，推荐适合她的护理流程"
+- **General**: "你好"
 
 ## Project Structure
 
@@ -103,5 +227,22 @@ START → memory_retrieve → agent_node → tool_executor → observe
 
 ```bash
 python -m pytest tests/ -v
-# 49 tests covering all components
+# 70+ tests covering all components including integration tests
+```
+
+### Integration Tests
+
+The integration test suite covers:
+
+- Intent classification (customer, knowledge, mixed, general)
+- MCP client node (success, not found, timeout, connection error)
+- Knowledge retrieval (valid dir, empty dir)
+- End-to-end graph flows (customer query, knowledge query, general query)
+- Web integration (health endpoint, index page, WebSocket)
+- MCP server configuration loading
+
+Run integration tests specifically:
+
+```bash
+python -m pytest tests/test_integration.py -v
 ```

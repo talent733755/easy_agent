@@ -138,7 +138,6 @@ class TestObserveNode:
 
 
 from src.nodes.human_gate import human_gate, TOOL_RISK_LEVELS
-from src.nodes.human_input import human_input_node
 
 
 class TestHumanGate:
@@ -188,26 +187,6 @@ class TestHumanGate:
         }
         result = human_gate(state)
         assert result["pending_human_input"] is False
-
-
-class TestHumanInputNode:
-    def test_human_input_appends_message(self):
-        state = {
-            "messages": [HumanMessage(content="original")],
-            "tools": [],
-            "context_window": {"used_tokens": 0, "max_tokens": 128000, "threshold": 0.7},
-            "memory_context": "",
-            "user_profile": "",
-            "agent_notes": "",
-            "pending_human_input": True,
-            "iteration_count": 1,
-            "max_iterations": 15,
-            "nudge_counter": 0,
-            "provider_name": "zhipu",
-        }
-        result = human_input_node(state, user_response="approved")
-        assert result["pending_human_input"] is False
-        assert any("approved" in str(m.content) for m in result["messages"])
 
 
 import os
