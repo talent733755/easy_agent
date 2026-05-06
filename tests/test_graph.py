@@ -15,6 +15,29 @@ class TestGraphStructure:
         compiled = graph
         assert compiled is not None
 
+    def test_graph_includes_beauty_nodes(self):
+        """Test that beauty nodes are included in the graph."""
+        from unittest.mock import patch, MagicMock
+
+        # Build graph and check nodes
+        graph = build_graph(checkpointer=None)
+
+        # Get node names from the graph builder
+        if hasattr(graph, 'builder'):
+            node_names = list(graph.builder.nodes.keys())
+        else:
+            # For compiled graph, check nodes attribute
+            node_names = list(graph.nodes.keys()) if hasattr(graph, 'nodes') else []
+
+        # Verify beauty nodes are present
+        assert "intent_classify" in node_names, f"intent_classify not in nodes: {node_names}"
+        assert "knowledge_retrieve" in node_names, f"knowledge_retrieve not in nodes: {node_names}"
+        assert "mcp_customer" in node_names, f"mcp_customer not in nodes: {node_names}"
+
+        # Verify existing nodes still present
+        assert "memory_retrieve" in node_names, f"memory_retrieve not in nodes: {node_names}"
+        assert "agent" in node_names, f"agent not in nodes: {node_names}"
+
 
 class TestGraphInvocation:
     def test_simple_conversation_flow(self):
@@ -26,7 +49,15 @@ class TestGraphInvocation:
         mock_model.bind_tools.return_value = mock_model
         mock_model.invoke.return_value = AIMessage(content="Hello! How can I help you?")
 
-        with patch('src.graph._build_agent_model', return_value=mock_model):
+        # Mock beauty nodes at their source module
+        mock_intent_result = {"intent": "general", "customer_name": "", "query_topic": ""}
+        mock_knowledge_result = {"knowledge_results": []}
+        mock_mcp_result = {"customer_context": {}, "mcp_results": {}}
+
+        with patch('src.graph._build_agent_model', return_value=mock_model), \
+             patch('src.nodes.beauty.intent_classify_node', return_value=mock_intent_result), \
+             patch('src.nodes.beauty.knowledge_retrieve_node', return_value=mock_knowledge_result), \
+             patch('src.nodes.beauty.mcp_customer_node', return_value=mock_mcp_result):
             graph = build_graph(checkpointer=MemorySaver())
 
         state: AgentState = {
@@ -41,6 +72,11 @@ class TestGraphInvocation:
             "max_iterations": 15,
             "nudge_counter": 0,
             "provider_name": "zhipu",
+            # Beauty fields
+            "intent": "general",
+            "customer_context": {},
+            "knowledge_results": [],
+            "mcp_results": {},
         }
 
         config = {"configurable": {"thread_id": "test-1"}}

@@ -22,6 +22,26 @@ def _build_agent_model(config: AppConfig):
     return provider.get_model()
 
 
+def _route_intent(state: AgentState) -> str:
+    """Route based on intent classification.
+
+    Routes:
+        - "knowledge": intent is "knowledge_query" -> knowledge_retrieve only
+        - "customer": intent is "query_customer" -> mcp_customer only
+        - "both": intent is "mixed" -> both parallel
+        - "skip": intent is "general" or unknown -> skip both, go to memory_retrieve
+    """
+    intent = state.get("intent", "general")
+    if intent == "knowledge_query":
+        return "knowledge"
+    elif intent == "query_customer":
+        return "customer"
+    elif intent == "mixed":
+        return "both"
+    else:
+        return "skip"
+
+
 def build_graph(checkpointer: BaseCheckpointSaver = None) -> StateGraph:
     if checkpointer is None:
         checkpointer = MemorySaver()
@@ -34,10 +54,12 @@ def build_graph(checkpointer: BaseCheckpointSaver = None) -> StateGraph:
     from src.nodes.tool_executor import ToolExecutor
     from src.nodes.observe_node import observe_node
     from src.nodes.human_gate import human_gate
-    from src.nodes.human_input import human_input_node
     from src.nodes.memory_retrieve import memory_retrieve_node
     from src.nodes.memory_save import memory_save_node
     from src.nodes.nudge_check import nudge_check_node
+
+    # Import beauty nodes
+    from src.nodes.beauty import intent_classify_node, knowledge_retrieve_node, mcp_customer_node
 
     # Import all tools
     from src.tools import read_file, write_file, list_dir
@@ -49,25 +71,62 @@ def build_graph(checkpointer: BaseCheckpointSaver = None) -> StateGraph:
     tools_by_name = {t.name: t for t in all_tools}
 
     executor = ToolExecutor(tools_by_name)
-    agent_node_fn = create_agent_node(model)
+    agent_node_fn = create_agent_node(model, tools=all_tools)
 
     # Build the graph
     builder = StateGraph(AgentState)
 
-    # Add nodes
+    # Add beauty nodes (Phase 1)
+    builder.add_node("intent_classify", intent_classify_node)
+
+    # Knowledge retrieve node with config
+    beauty_config = config.beauty
+    if beauty_config:
+        kb_dir = beauty_config.knowledge_base.base_dir
+        builder.add_node("knowledge_retrieve", lambda s: knowledge_retrieve_node(s, knowledge_dir=kb_dir))
+
+        # MCP customer node with config
+        mcp_config = beauty_config.mcp_servers.get("customer")
+        if mcp_config:
+            builder.add_node("mcp_customer", lambda s: mcp_customer_node(s, mcp_url=mcp_config.url, timeout=mcp_config.timeout))
+        else:
+            # Add dummy node that returns empty results
+            builder.add_node("mcp_customer", lambda s: {"customer_context": {}, "mcp_results": {}})
+    else:
+        # Add dummy nodes when beauty config not available
+        builder.add_node("knowledge_retrieve", lambda s: {"knowledge_results": []})
+        builder.add_node("mcp_customer", lambda s: {"customer_context": {}, "mcp_results": {}})
+
+    # Add existing nodes
     builder.add_node("memory_retrieve", lambda s: memory_retrieve_node(s, data_dir=config.memory["data_dir"]))
     builder.add_node("agent", agent_node_fn)
     builder.add_node("tool_executor", _make_tool_node(executor))
     builder.add_node("observe", observe_node)
     builder.add_node("human_gate", human_gate)
-    builder.add_node("human_input", lambda s: human_input_node(s))
     builder.add_node("nudge_check", lambda s: nudge_check_node(
         s, nudge_interval=config.agent["memory_nudge_interval"], data_dir=config.memory["data_dir"]
     ))
     builder.add_node("memory_save", lambda s: memory_save_node(s, data_dir=config.memory["data_dir"]))
 
-    # Set entry
-    builder.set_entry_point("memory_retrieve")
+    # Set entry point to intent_classify
+    builder.set_entry_point("intent_classify")
+
+    # Intent routing: parallel branches to knowledge_retrieve and mcp_customer
+    builder.add_conditional_edges("intent_classify", _route_intent, {
+        "knowledge": "knowledge_retrieve",
+        "customer": "mcp_customer",
+        "both": "knowledge_retrieve",  # Will use fan-out for parallel execution
+        "skip": "memory_retrieve",
+    })
+
+    # For "both" intent, we need parallel execution
+    # LangGraph handles this through fan-out pattern: multiple edges from same node
+    builder.add_edge("intent_classify", "knowledge_retrieve")  # Fan-out edge for parallel
+    builder.add_edge("intent_classify", "mcp_customer")        # Fan-out edge for parallel
+
+    # Both converge to memory_retrieve
+    builder.add_edge("knowledge_retrieve", "memory_retrieve")
+    builder.add_edge("mcp_customer", "memory_retrieve")
 
     # Edges
     builder.add_edge("memory_retrieve", "agent")
@@ -80,14 +139,7 @@ def build_graph(checkpointer: BaseCheckpointSaver = None) -> StateGraph:
 
     builder.add_edge("tool_executor", "observe")
     builder.add_edge("observe", "human_gate")
-
-    # Conditional edge from human_gate
-    builder.add_conditional_edges("human_gate", _route_human_gate, {
-        "interrupt": "human_input",
-        "continue": "nudge_check",
-    })
-
-    builder.add_edge("human_input", "nudge_check")
+    builder.add_edge("human_gate", "nudge_check")
 
     # Conditional edge from nudge_check (back to agent or end)
     builder.add_conditional_edges("nudge_check", lambda s: _route_iteration(s, config.agent["max_iterations"]), {
@@ -124,12 +176,6 @@ def _route_agent(state: AgentState) -> str:
     if isinstance(last_msg, AIMessage) and hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
         return "tools"
     return "end"
-
-
-def _route_human_gate(state: AgentState) -> str:
-    if state.get("pending_human_input", False):
-        return "interrupt"
-    return "continue"
 
 
 def _route_iteration(state: AgentState, max_iterations: int) -> str:
