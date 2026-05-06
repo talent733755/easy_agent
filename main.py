@@ -135,21 +135,32 @@ def run_agent(args):
         try:
             result = graph.invoke(state, graph_config)
 
-            # Check for interrupt (human gate)
-            if result.get("pending_human_input"):
-                last_ai = [m for m in result["messages"] if isinstance(m, AIMessage) and hasattr(m, "tool_calls") and m.tool_calls]
-                if last_ai:
-                    tool_info = last_ai[-1].tool_calls[-1]
+            # Handle interrupts (e.g. human-gate tool approval)
+            while True:
+                gs = graph.get_state(graph_config)
+                if not gs.next:
+                    break
+                # Check for pending interrupts
+                tasks = gs.tasks
+                if not tasks or not tasks[0].interrupts:
+                    break
+                interrupt_val = tasks[0].interrupts[0].value
+                itype = interrupt_val.get("type", "")
+
+                if itype == "tool_approval":
                     print(f"\n⚠️  Dangerous operation:")
-                    print(f"  Tool: {tool_info['name']}")
-                    print(f"  Args: {tool_info['args']}")
+                    print(f"  Tool: {interrupt_val['tool']}")
+                    print(f"  Args: {interrupt_val['args']}")
                     approval = input("  Approve? [y/n]: ").strip().lower()
                     if approval == "y":
                         from langgraph.types import Command
                         result = graph.invoke(Command(resume={"approved": True}), graph_config)
                     else:
-                        result["messages"].append(HumanMessage(content="[Human Response]: Operation denied."))
-                        result["pending_human_input"] = False
+                        result = graph.invoke(Command(resume={"approved": False}), graph_config)
+                else:
+                    # Unknown interrupt type — resume without action
+                    from langgraph.types import Command
+                    result = graph.invoke(Command(resume={}), graph_config)
 
             # Display agent response
             for m in reversed(result["messages"]):
@@ -159,6 +170,9 @@ def run_agent(args):
 
             # Update state for next turn
             state = result
+
+            # Prevent accumulation of tool_call messages across turns
+            state["messages"] = [m for m in state["messages"] if not (isinstance(m, AIMessage) and m.tool_calls)]
 
             # Increment nudge counter
             state["nudge_counter"] = state.get("nudge_counter", 0) + 1

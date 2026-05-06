@@ -1,4 +1,5 @@
 from langchain_core.messages import AIMessage
+from langgraph.types import interrupt
 from src.state import AgentState
 
 # Default risk levels for built-in tools
@@ -31,12 +32,19 @@ def human_gate(state: AgentState) -> dict:
                 last_text = str(m.content)
                 break
         if "[HUMAN_INPUT:" in last_text:
-            return {"pending_human_input": True}
+            interrupt({"type": "human_input", "text": last_text})
         return {"pending_human_input": False}
 
     for tc in last_ai.tool_calls:
-        risk = TOOL_RISK_LEVELS.get(tc.get("name", ""), "safe")
+        name = tc.get("name") if isinstance(tc, dict) else tc.name
+        args = tc.get("args") if isinstance(tc, dict) else tc.args
+        risk = TOOL_RISK_LEVELS.get(name, "safe")
         if risk == "dangerous":
-            return {"pending_human_input": True}
+            # Pause execution and ask for approval
+            interrupt({
+                "type": "tool_approval",
+                "tool": name,
+                "args": args,
+            })
 
     return {"pending_human_input": False}

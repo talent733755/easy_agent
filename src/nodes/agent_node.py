@@ -26,7 +26,9 @@ SYSTEM_PROMPT = """You are a helpful AI assistant with access to tools.
 """
 
 
-def create_agent_node(model: BaseChatModel):
+def create_agent_node(model: BaseChatModel, tools: list = None):
+    tools = tools or []
+
     def agent_node(state: AgentState) -> dict:
         # Build system message with memory context
         system_content = SYSTEM_PROMPT.format(
@@ -39,8 +41,7 @@ def create_agent_node(model: BaseChatModel):
         # Prepend system message to conversation
         messages = [system_msg] + list(state["messages"])
 
-        # Bind tools if available
-        tools = state.get("tools", [])
+        # Bind tools to LLM so it knows about them
         if tools:
             llm = model.bind_tools(tools)
         else:
