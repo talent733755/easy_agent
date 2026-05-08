@@ -63,9 +63,11 @@ def _format_knowledge_results(results: list) -> str:
         return "(No knowledge base results available)"
     parts = []
     for r in results:
-        parts.append(
-            f"【来源：{r.get('source', 'unknown')}】\n{r.get('content', '')}"
-        )
+        if not isinstance(r, dict):
+            continue
+        source = r.get("source") or "unknown"
+        content = r.get("content") or ""
+        parts.append(f"【来源：{source}】\n{content}")
     return "\n\n".join(parts)
 
 
@@ -78,17 +80,16 @@ def create_agent_node(model: BaseChatModel, tools: list = None):
             state.get("knowledge_results", [])
         )
 
-        # Build system message with all context
-        system_content = SYSTEM_PROMPT.format(
-            knowledge_results=knowledge_results,
-            memory_context=state.get("memory_context", ""),
-            user_profile=state.get("user_profile", ""),
-            agent_notes=state.get("agent_notes", ""),
-        )
+        # Build system message with all context (manual replacement to avoid KeyError on { in content)
+        system_content = SYSTEM_PROMPT
+        system_content = system_content.replace("{knowledge_results}", knowledge_results)
+        system_content = system_content.replace("{memory_context}", state.get("memory_context", ""))
+        system_content = system_content.replace("{user_profile}", state.get("user_profile", ""))
+        system_content = system_content.replace("{agent_notes}", state.get("agent_notes", ""))
         system_msg = SystemMessage(content=system_content)
 
         # Prepend system message to conversation
-        messages = [system_msg] + list(state["messages"])
+        messages = [system_msg] + list(state.get("messages", []))
 
         # Bind tools to LLM so it knows about them
         if tools:
