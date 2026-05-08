@@ -1,6 +1,6 @@
 import os
 import tempfile
-from src.config import load_config, AppConfig
+from src.config import load_config, AppConfig, MCPServerConfig
 
 
 def test_load_config_with_env_substitution():
@@ -51,3 +51,30 @@ def test_load_beauty_config():
     assert "products" in config.beauty.knowledge_base.indexes
     assert config.beauty.mcp_servers["customer"].url == "http://localhost:3001"
     assert config.beauty.web.port == 8080
+
+    customer = config.beauty.mcp_servers["customer"]
+    assert customer.intent == "query_customer"
+    assert len(customer.endpoints) == 3
+    assert customer.endpoints[0]["name"] == "get_customer"
+    assert customer.endpoints[2]["description"] == "按客户ID查服务历史"
+
+
+class TestMCPServerConfig:
+    def test_from_dict_with_endpoints(self):
+        data = {
+            "url": "http://localhost:3001",
+            "timeout": 30,
+            "intent": "query_customer",
+            "endpoints": [
+                {"name": "get_customer", "description": "查客户"},
+            ],
+        }
+        config = MCPServerConfig(**data)
+        assert config.intent == "query_customer"
+        assert len(config.endpoints) == 1
+        assert config.endpoints[0]["name"] == "get_customer"
+
+    def test_from_dict_defaults(self):
+        config = MCPServerConfig(url="http://localhost:3001")
+        assert config.intent == ""
+        assert config.endpoints == []

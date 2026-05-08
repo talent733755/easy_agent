@@ -21,6 +21,8 @@ class KnowledgeBaseConfig:
 class MCPServerConfig:
     url: str
     timeout: int = 30
+    intent: str = ""                        # 该 MCP 对应的意图类型
+    endpoints: list[dict] = field(default_factory=list)  # 端点描述
 
 
 @dataclass

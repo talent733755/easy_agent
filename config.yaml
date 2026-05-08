@@ -19,20 +19,26 @@ providers:
     default_model: "claude-sonnet-4-6"
     timeout: 60
 
-  #自定义代理示例 - 支持 Anthropic 兼容的 API
+  mimo:
+    type: anthropic
+    api_key: "${MIMO_API_KEY}"
+    base_url: "https://token-plan-cn.xiaomimimo.com/anthropic"
+    default_model: "mimo-v2-pro"
+    timeout: 120
+
   codingplan:
     type: anthropic
-    api_key: "72a2c58f08bd030d67ea4e84d5a92631:ZDk1OGRlN2NkMjU5YTg5MGYxNDJjMDUy"
+    api_key: "${CODINGPLAN_API_KEY}"
     base_url: "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2"
     default_model: "astron-code-latest"
     timeout: 120
 
-active_provider: "codingplan"
+active_provider: "mimo"
 fallback_provider: "openai"
 
 search:
   provider: "tavily"
-  tavily_api_key: "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"
+  tavily_api_key: "${TAVILY_API_KEY}"
 
 agent:
   max_iterations: 15
@@ -68,6 +74,14 @@ beauty:
     customer:
       url: "http://localhost:3001"
       timeout: 30
+      intent: "query_customer"
+      endpoints:
+        - name: get_customer
+          description: "按姓名查客户信息"
+        - name: get_consumption
+          description: "按客户ID查消费记录"
+        - name: get_service_history
+          description: "按客户ID查服务历史"
 
   intent_prompt: "./prompts/beauty_intent_v1.txt"
 
