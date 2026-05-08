@@ -135,3 +135,41 @@ class TestCheckDedup:
         entry = MemoryEntry(category="correction", scene="新场景")
         result = _check_dedup(entry, existing, mock_model)
         assert result is None
+
+    def test_mixed_categories_returns_original_index(self):
+        """LLM returns filtered index 0 (first correction), but that maps to original index 1."""
+        mock_model = MagicMock()
+        mock_model.invoke.return_value = MagicMock(content="MERGE 0")
+        existing = [
+            MemoryEntry(category="instruction", instruction="指令A"),  # index 0
+            MemoryEntry(category="correction", scene="场景B"),          # index 1 (filtered 0)
+            MemoryEntry(category="correction", scene="场景C"),          # index 2 (filtered 1)
+        ]
+        entry = MemoryEntry(category="correction", scene="场景B类似")
+        result = _check_dedup(entry, existing, mock_model)
+        assert result == 1  # original index, not filtered index
+
+    def test_mixed_categories_second_match(self):
+        """LLM returns filtered index 1, maps to original index 2."""
+        mock_model = MagicMock()
+        mock_model.invoke.return_value = MagicMock(content="MERGE 1")
+        existing = [
+            MemoryEntry(category="instruction", instruction="指令A"),  # index 0
+            MemoryEntry(category="correction", scene="场景B"),          # index 1 (filtered 0)
+            MemoryEntry(category="correction", scene="场景C"),          # index 2 (filtered 1)
+        ]
+        entry = MemoryEntry(category="correction", scene="场景C类似")
+        result = _check_dedup(entry, existing, mock_model)
+        assert result == 2
+
+    def test_filtered_index_out_of_bounds(self):
+        """LLM returns a filtered index beyond same_cat length -> treated as NEW."""
+        mock_model = MagicMock()
+        mock_model.invoke.return_value = MagicMock(content="MERGE 99")
+        existing = [
+            MemoryEntry(category="instruction", instruction="指令A"),
+            MemoryEntry(category="correction", scene="场景B"),
+        ]
+        entry = MemoryEntry(category="correction", scene="新场景")
+        result = _check_dedup(entry, existing, mock_model)
+        assert result is None

@@ -79,17 +79,18 @@ def _parse_extracted_fields(trigger_type: str, extracted: str) -> dict:
 
 
 def _check_dedup(new_entry: MemoryEntry, existing: list[MemoryEntry], model) -> int | None:
-    """与已有条目去重。返回相似条目的 index，或 None。只与同 category 的条目比较。"""
-    same_cat = [e for e in existing if e.category == new_entry.category]
+    """与已有条目去重。返回相似条目在 full existing 列表中的 index，或 None。只与同 category 的条目比较。"""
+    # Build same_cat as (original_index, entry) tuples so we can map back
+    same_cat = [(idx, e) for idx, e in enumerate(existing) if e.category == new_entry.category]
     if not same_cat:
         return None
 
     existing_desc = []
-    for i, e in enumerate(same_cat):
+    for filtered_i, (orig_i, e) in enumerate(same_cat):
         if e.category == "correction":
-            existing_desc.append(f"[{i}] 场景:{e.scene} | 错误:{e.error} | 正确:{e.correct}")
+            existing_desc.append(f"[{filtered_i}] 场景:{e.scene} | 错误:{e.error} | 正确:{e.correct}")
         else:
-            existing_desc.append(f"[{i}] 指令:{e.instruction}")
+            existing_desc.append(f"[{filtered_i}] 指令:{e.instruction}")
 
     if new_entry.category == "correction":
         new_desc = f"场景:{new_entry.scene} | 错误:{new_entry.error} | 正确:{new_entry.correct}"
@@ -106,7 +107,9 @@ def _check_dedup(new_entry: MemoryEntry, existing: list[MemoryEntry], model) -> 
         if "MERGE" in content:
             match = re.search(r"\d+", content)
             if match:
-                return int(match.group())
+                filtered_idx = int(match.group())
+                if 0 <= filtered_idx < len(same_cat):
+                    return same_cat[filtered_idx][0]  # original index in full list
         return None
     except Exception:
         return None
@@ -207,7 +210,7 @@ def memory_learn_node(state: dict, data_dir: str = "~/.easy_agent") -> dict:
         existing_entries.append(new_entry)
 
     # 5. 容量兜底
-    if len(existing_entries) > 20:
+    if len(existing_entries) >= 20:
         existing_entries.sort(key=lambda e: (
             {"high": 2, "medium": 1, "low": 0}[e.importance],
             e.correction_count,
