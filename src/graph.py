@@ -22,22 +22,33 @@ def _build_agent_model(config: AppConfig):
     return provider.get_model()
 
 
-def _route_intent(state: AgentState) -> str:
+def _build_mcp_intent_routes(mcp_configs: dict) -> dict:
+    """从 MCP config 构建意图到节点名的路由映射。"""
+    routes = {}
+    for name, svc_config in mcp_configs.items():
+        intent = getattr(svc_config, "intent", "")
+        if intent:
+            routes[intent] = f"mcp_{name}"
+    return routes
+
+
+def _route_intent(state: AgentState, mcp_routes: dict = None) -> str:
     """Route based on intent classification.
 
     Routes:
         - "knowledge": intent is "knowledge_query" -> knowledge_retrieve only
-        - "customer": intent is "query_customer" -> mcp_customer only
-        - "both": intent is "mixed" -> both parallel
-        - "skip": intent is "general" or unknown -> skip both, go to memory_retrieve
+        - MCP route: intent matches a registered MCP service intent -> that MCP node
+        - "mixed": intent is "mixed" -> knowledge (fan-out handles MCP nodes)
+        - "skip": intent is "general" or unknown -> skip, go to memory_retrieve
     """
     intent = state.get("intent", "general")
+
     if intent == "knowledge_query":
         return "knowledge"
-    elif intent == "query_customer":
-        return "customer"
     elif intent == "mixed":
-        return "both"
+        return "knowledge"  # Fan-out handles MCP nodes
+    elif intent in (mcp_routes or {}):
+        return mcp_routes[intent]
     else:
         return "skip"
 
@@ -60,7 +71,7 @@ def build_graph(checkpointer: BaseCheckpointSaver = None) -> StateGraph:
     from src.nodes.memory_learn_node import memory_learn_node
 
     # Import beauty nodes
-    from src.nodes.beauty import intent_classify_node, knowledge_retrieve_node, mcp_customer_node
+    from src.nodes.beauty import intent_classify_node, knowledge_retrieve_node, create_mcp_service_node
 
     # Import all tools
     from src.tools import read_file, write_file, list_dir
@@ -85,18 +96,24 @@ def build_graph(checkpointer: BaseCheckpointSaver = None) -> StateGraph:
     if beauty_config:
         kb_dir = beauty_config.knowledge_base.base_dir
         builder.add_node("knowledge_retrieve", lambda s: knowledge_retrieve_node(s, knowledge_dir=kb_dir))
-
-        # MCP customer node with config
-        mcp_config = beauty_config.mcp_servers.get("customer")
-        if mcp_config:
-            builder.add_node("mcp_customer", lambda s: mcp_customer_node(s, mcp_url=mcp_config.url, timeout=mcp_config.timeout))
-        else:
-            # Add dummy node that returns empty results
-            builder.add_node("mcp_customer", lambda s: {"customer_context": {}, "mcp_results": {}})
     else:
-        # Add dummy nodes when beauty config not available
         builder.add_node("knowledge_retrieve", lambda s: {"knowledge_results": []})
-        builder.add_node("mcp_customer", lambda s: {"customer_context": {}, "mcp_results": {}})
+
+    # Dynamic MCP service registration from config
+    mcp_configs = beauty_config.mcp_servers if beauty_config else {}
+    registered_mcp_nodes = []
+
+    for service_name, svc_config in mcp_configs.items():
+        svc_dict = {
+            "url": svc_config.url,
+            "timeout": svc_config.timeout,
+            "intent": svc_config.intent,
+            "endpoints": svc_config.endpoints,
+            "name": service_name,
+        }
+        node_fn = create_mcp_service_node(svc_dict, model=model)
+        builder.add_node(f"mcp_{service_name}", node_fn)
+        registered_mcp_nodes.append(service_name)
 
     # Add existing nodes
     builder.add_node("memory_retrieve", lambda s: memory_retrieve_node(s, data_dir=config.memory["data_dir"]))
@@ -113,22 +130,24 @@ def build_graph(checkpointer: BaseCheckpointSaver = None) -> StateGraph:
     # Set entry point to intent_classify
     builder.set_entry_point("intent_classify")
 
-    # Intent routing: parallel branches to knowledge_retrieve and mcp_customer
-    builder.add_conditional_edges("intent_classify", _route_intent, {
-        "knowledge": "knowledge_retrieve",
-        "customer": "mcp_customer",
-        "both": "knowledge_retrieve",  # Will use fan-out for parallel execution
-        "skip": "memory_retrieve",
-    })
+    # Build dynamic routes
+    mcp_routes = _build_mcp_intent_routes(mcp_configs)
 
-    # For "both" intent, we need parallel execution
-    # LangGraph handles this through fan-out pattern: multiple edges from same node
-    builder.add_edge("intent_classify", "knowledge_retrieve")  # Fan-out edge for parallel
-    builder.add_edge("intent_classify", "mcp_customer")        # Fan-out edge for parallel
+    # Intent routing with dynamic MCP routes
+    route_targets = {"knowledge": "knowledge_retrieve", "skip": "memory_retrieve"}
+    for svc_name in registered_mcp_nodes:
+        route_targets[f"mcp_{svc_name}"] = f"mcp_{svc_name}"
+    builder.add_conditional_edges("intent_classify", lambda s: _route_intent(s, mcp_routes), route_targets)
 
-    # Both converge to memory_retrieve
+    # Fan-out edges for parallel execution (mixed intent)
+    builder.add_edge("intent_classify", "knowledge_retrieve")
+    for svc_name in registered_mcp_nodes:
+        builder.add_edge("intent_classify", f"mcp_{svc_name}")
+
+    # Convergence to memory_retrieve
     builder.add_edge("knowledge_retrieve", "memory_retrieve")
-    builder.add_edge("mcp_customer", "memory_retrieve")
+    for svc_name in registered_mcp_nodes:
+        builder.add_edge(f"mcp_{svc_name}", "memory_retrieve")
 
     # Edges
     builder.add_edge("memory_retrieve", "agent")

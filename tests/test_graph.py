@@ -54,10 +54,12 @@ class TestGraphInvocation:
         mock_knowledge_result = {"knowledge_results": []}
         mock_mcp_result = {"customer_context": {}, "mcp_results": {}}
 
+        mock_mcp_node_fn = MagicMock(return_value=mock_mcp_result)
+
         with patch('src.graph._build_agent_model', return_value=mock_model), \
              patch('src.nodes.beauty.intent_classify_node', return_value=mock_intent_result), \
              patch('src.nodes.beauty.knowledge_retrieve_node', return_value=mock_knowledge_result), \
-             patch('src.nodes.beauty.mcp_customer_node', return_value=mock_mcp_result):
+             patch('src.nodes.beauty.create_mcp_service_node', return_value=mock_mcp_node_fn):
             graph = build_graph(checkpointer=MemorySaver())
 
         state: AgentState = {
