@@ -57,6 +57,7 @@ def build_graph(checkpointer: BaseCheckpointSaver = None) -> StateGraph:
     from src.nodes.memory_retrieve import memory_retrieve_node
     from src.nodes.memory_save import memory_save_node
     from src.nodes.nudge_check import nudge_check_node
+    from src.nodes.memory_learn_node import memory_learn_node
 
     # Import beauty nodes
     from src.nodes.beauty import intent_classify_node, knowledge_retrieve_node, mcp_customer_node
@@ -103,6 +104,7 @@ def build_graph(checkpointer: BaseCheckpointSaver = None) -> StateGraph:
     builder.add_node("tool_executor", _make_tool_node(executor))
     builder.add_node("observe", observe_node)
     builder.add_node("human_gate", human_gate)
+    builder.add_node("memory_learn", lambda s: memory_learn_node(s, data_dir=config.memory["data_dir"]))
     builder.add_node("nudge_check", lambda s: nudge_check_node(
         s, nudge_interval=config.agent["memory_nudge_interval"], data_dir=config.memory["data_dir"]
     ))
@@ -139,7 +141,8 @@ def build_graph(checkpointer: BaseCheckpointSaver = None) -> StateGraph:
 
     builder.add_edge("tool_executor", "observe")
     builder.add_edge("observe", "human_gate")
-    builder.add_edge("human_gate", "nudge_check")
+    builder.add_edge("human_gate", "memory_learn")
+    builder.add_edge("memory_learn", "nudge_check")
 
     # Conditional edge from nudge_check (back to agent or end)
     builder.add_conditional_edges("nudge_check", lambda s: _route_iteration(s, config.agent["max_iterations"]), {
