@@ -474,9 +474,7 @@ for service_name, svc_config in mcp_configs.items():
     builder.add_node(f"mcp_{service_name}", node_fn)
     registered_mcp_nodes.append(service_name)
 
-# 兜底：如果没有配置任何 MCP 服务
-if "customer" not in registered_mcp_nodes:
-    builder.add_node("mcp_customer", lambda s: {"customer_context": {}, "mcp_results": {}})
+# 无兜底：只注册 config 中声明的服务
 ```
 
 - [ ] **Step 2: 修改 _route_intent 支持动态路由**
@@ -571,7 +569,7 @@ git commit -m "feat: dynamic MCP service registration in graph
 - Iterate config.beauty.mcp_servers to auto-register MCP nodes
 - Dynamic intent routing from config
 - Dynamic fan-out edges for parallel MCP execution
-- Backward compatible: customer MCP still works
+- All registered MCP services work without code changes
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ```
@@ -740,7 +738,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 - [ ] config.yaml 中声明 1 个 MCP 服务 → graph 自动创建节点
 - [ ] 声明 2+ 个 MCP 服务 → graph 自动注册所有节点，路由自动扩展
 - [ ] 不声明任何 MCP 服务 → 图正常构建，跳过所有 MCP 节点
-- [ ] 现有 customer MCP 功能不受影响
+- [ ] 已配置的 MCP 服务（如 customer）功能不受影响
 - [ ] 新 MCP 节点调用时，LLM 自动选择端点和提取参数
 
 ---
