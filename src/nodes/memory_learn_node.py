@@ -150,6 +150,9 @@ def memory_learn_node(state: dict, data_dir: str = "~/.easy_agent") -> dict:
     except Exception:
         pass
 
+    if model is None:
+        return {}
+
     # 1. 触发检测
     trigger_type = detect_trigger(state, model=model)
     if not trigger_type:
