@@ -67,7 +67,11 @@ def knowledge_retrieve_node(
     if not kb_path.exists():
         return {"knowledge_results": []}
 
-    embeddings = OpenAIEmbeddings()
+    embeddings = OpenAIEmbeddings(
+        model="BAAI/bge-m3",
+        openai_api_base="https://api.siliconflow.cn/v1",
+        openai_api_key="sk-pzjxmvkbjgscxidtcuqrgaxngfktlfctlhfwjpmwyfkdztgy",
+    )
     rag = KnowledgeRAG(str(kb_path), embeddings=embeddings)
 
     # Step 4: Try to load existing index or build new one

@@ -2,31 +2,33 @@ import pickle
 from pathlib import Path
 import numpy as np
 import faiss
-from sentence_transformers import SentenceTransformer
+import openai
+
+
+SILICONFLOW_BASE = "https://api.siliconflow.cn/v1"
+SILICONFLOW_KEY = "sk-pzjxmvkbjgscxidtcuqrgaxngfktlfctlhfwjpmwyfkdztgy"
+EMBEDDING_MODEL = "BAAI/bge-m3"
+EMBEDDING_DIM = 1024  # BAAI/bge-m3 输出维度
+
+
+def _embed(texts: list[str]) -> np.ndarray:
+    """调用硅基流动 API 获取 embeddings。"""
+    client = openai.OpenAI(base_url=SILICONFLOW_BASE, api_key=SILICONFLOW_KEY)
+    resp = client.embeddings.create(model=EMBEDDING_MODEL, input=texts)
+    vectors = [item.embedding for item in resp.data]
+    return np.array(vectors, dtype=np.float32)
 
 
 class VectorStore:
-    def __init__(self, data_dir: str, max_entries: int = 500, model_name: str = "all-MiniLM-L6-v2"):
+    def __init__(self, data_dir: str, max_entries: int = 500):
         self.dir = Path(data_dir).expanduser()
         self.dir.mkdir(parents=True, exist_ok=True)
         self.max_entries = max_entries
         self.index_path = self.dir / "faiss.index"
         self.meta_path = self.dir / "meta.pkl"
-        self._model = None  # lazy load
-        self._model_name = model_name
         self._index = None
         self._metadata: list[dict] = []
         self._load()
-
-    @property
-    def model(self):
-        if self._model is None:
-            # Use local_files_only to avoid network requests when model is cached
-            self._model = SentenceTransformer(
-                self._model_name,
-                local_files_only=True
-            )
-        return self._model
 
     def _load(self):
         if self.index_path.exists() and self.meta_path.exists():
@@ -34,7 +36,7 @@ class VectorStore:
             with open(self.meta_path, "rb") as f:
                 self._metadata = pickle.load(f)
         else:
-            self._index = faiss.IndexFlatL2(384)  # all-MiniLM-L6-v2 = 384 dims
+            self._index = faiss.IndexFlatL2(EMBEDDING_DIM)
             self._metadata = []
 
     def _save(self):
@@ -43,28 +45,26 @@ class VectorStore:
             pickle.dump(self._metadata, f)
 
     def add(self, text: str, metadata: dict = None):
-        embedding = self.model.encode([text], normalize_embeddings=True)
-        self._index.add(np.array(embedding, dtype=np.float32))
+        embedding = _embed([text])
+        self._index.add(embedding)
         meta = metadata.copy() if metadata else {}
-        meta["_text"] = text  # Store text for potential re-indexing
+        meta["_text"] = text
         self._metadata.append(meta)
         # FIFO eviction
         if len(self._metadata) > self.max_entries:
             self._metadata = self._metadata[-self.max_entries:]
-            # Rebuild index for remaining entries
             all_texts = [m.get("_text", "") for m in self._metadata]
-            embeddings = self.model.encode(all_texts, normalize_embeddings=True)
-            # Create new index and swap
-            new_index = faiss.IndexFlatL2(384)
-            new_index.add(np.array(embeddings, dtype=np.float32))
+            embeddings = _embed(all_texts)
+            new_index = faiss.IndexFlatL2(EMBEDDING_DIM)
+            new_index.add(embeddings)
             self._index = new_index
         self._save()
 
     def search(self, query: str, top_k: int = 3) -> list[dict]:
         if len(self._metadata) == 0:
             return []
-        embedding = self.model.encode([query], normalize_embeddings=True)
-        distances, indices = self._index.search(np.array(embedding, dtype=np.float32), min(top_k, len(self._metadata)))
+        embedding = _embed([query])
+        distances, indices = self._index.search(embedding, min(top_k, len(self._metadata)))
         results = []
         for dist, idx in zip(distances[0], indices[0]):
             if idx >= 0 and idx < len(self._metadata):
@@ -75,36 +75,26 @@ class VectorStore:
         return len(self._metadata)
 
     def delete(self, filter_fn) -> int:
-        """Delete entries where filter_fn(metadata) returns True.
-
-        Args:
-            filter_fn: A function that takes metadata dict and returns True to delete.
-
-        Returns:
-            Number of entries deleted.
-        """
+        """Delete entries where filter_fn(metadata) returns True."""
         if len(self._metadata) == 0:
             return 0
 
-        # Find indices to keep
         indices_to_keep = [i for i, meta in enumerate(self._metadata) if not filter_fn(meta)]
         deleted_count = len(self._metadata) - len(indices_to_keep)
 
         if deleted_count == 0:
             return 0
 
-        # Rebuild metadata
         self._metadata = [self._metadata[i] for i in indices_to_keep]
 
-        # Rebuild index
         if self._metadata:
             all_texts = [m.get("_text", "") for m in self._metadata]
-            embeddings = self.model.encode(all_texts, normalize_embeddings=True)
-            new_index = faiss.IndexFlatL2(384)
-            new_index.add(np.array(embeddings, dtype=np.float32))
+            embeddings = _embed(all_texts)
+            new_index = faiss.IndexFlatL2(EMBEDDING_DIM)
+            new_index.add(embeddings)
             self._index = new_index
         else:
-            self._index = faiss.IndexFlatL2(384)
+            self._index = faiss.IndexFlatL2(EMBEDDING_DIM)
 
         self._save()
         return deleted_count
@@ -112,5 +102,5 @@ class VectorStore:
     def clear(self):
         """Clear all entries."""
         self._metadata = []
-        self._index = faiss.IndexFlatL2(384)
+        self._index = faiss.IndexFlatL2(EMBEDDING_DIM)
         self._save()

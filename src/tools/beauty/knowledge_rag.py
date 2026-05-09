@@ -20,7 +20,11 @@ class KnowledgeRAG:
     ):
         self.knowledge_dir = Path(knowledge_dir)
         self.index_name = index_name
-        self.embeddings = embeddings or OpenAIEmbeddings()
+        self.embeddings = embeddings or OpenAIEmbeddings(
+            model="BAAI/bge-m3",
+            openai_api_base="https://api.siliconflow.cn/v1",
+            openai_api_key="sk-pzjxmvkbjgscxidtcuqrgaxngfktlfctlhfwjpmwyfkdztgy",
+        )
         self.vectorstore: FAISS | None = None
 
     def build_index(self) -> None:

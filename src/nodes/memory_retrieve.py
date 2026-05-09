@@ -21,7 +21,10 @@ def memory_retrieve_node(state: AgentState, data_dir: str = "~/.easy_agent") -> 
 
     # Search history
     fts5_results = fts5.search(last_user_msg, limit=3) if last_user_msg else []
-    vs_results = vs.search(last_user_msg, top_k=3) if last_user_msg else []
+    try:
+        vs_results = vs.search(last_user_msg, top_k=3) if last_user_msg else []
+    except Exception:
+        vs_results = []
 
     # Build memory context
     parts = []

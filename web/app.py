@@ -190,6 +190,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                         sessions[session_id] = state
 
                     except Exception as e:
+                        import traceback
+                        print(f"[ERROR] {type(e).__name__}: {e}")
+                        traceback.print_exc()
                         # Try fallback provider
                         if hasattr(config, 'fallback_provider') and config.fallback_provider != config.active_provider:
                             await websocket.send_json({
