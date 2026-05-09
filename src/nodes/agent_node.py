@@ -48,6 +48,10 @@ SYSTEM_PROMPT = """You are a helpful AI assistant for beauty salon staff (娇莉
 
 {agent_notes}
 
+## MCP 服务数据（用户档案、消费记录等）
+
+{mcp_results}
+
 ## Guidelines
 
 - 回答美容相关问题时，永远优先使用知识库内容
@@ -71,6 +75,27 @@ def _format_knowledge_results(results: list) -> str:
     return "\n\n".join(parts)
 
 
+def _format_mcp_results(mcp_results: dict) -> str:
+    """Format MCP service results for the system prompt."""
+    if not mcp_results:
+        return "(暂无用户数据)"
+    parts = []
+    for service_name, data in mcp_results.items():
+        if isinstance(data, dict):
+            if "error" in data:
+                parts.append(f"【{service_name}】调用失败: {data['error']}")
+            elif "result" in data:
+                # SAAS 接口返回纯字符串
+                parts.append(f"【{service_name}】\n{data['result']}")
+            else:
+                # 结构化数据（如 customer mock）
+                import json
+                parts.append(f"【{service_name}】\n{json.dumps(data, ensure_ascii=False, indent=2)}")
+        else:
+            parts.append(f"【{service_name}】\n{str(data)}")
+    return "\n\n".join(parts)
+
+
 def create_agent_node(model: BaseChatModel, tools: list = None):
     tools = tools or []
 
@@ -80,12 +105,16 @@ def create_agent_node(model: BaseChatModel, tools: list = None):
             state.get("knowledge_results", [])
         )
 
+        # Format MCP results
+        mcp_results = _format_mcp_results(state.get("mcp_results", {}))
+
         # Build system message with all context (manual replacement to avoid KeyError on { in content)
         system_content = SYSTEM_PROMPT
         system_content = system_content.replace("{knowledge_results}", knowledge_results)
         system_content = system_content.replace("{memory_context}", state.get("memory_context", ""))
         system_content = system_content.replace("{user_profile}", state.get("user_profile", ""))
         system_content = system_content.replace("{agent_notes}", state.get("agent_notes", ""))
+        system_content = system_content.replace("{mcp_results}", mcp_results)
         system_msg = SystemMessage(content=system_content)
 
         # Prepend system message to conversation
