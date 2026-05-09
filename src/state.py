@@ -1,6 +1,12 @@
+import operator
 from typing import Annotated, TypedDict
 from langgraph.graph.message import add_messages
 from langchain_core.tools import BaseTool
+
+
+def _merge_dicts(a: dict, b: dict) -> dict:
+    """Merge two dicts, with b's values taking precedence."""
+    return {**a, **b}
 
 
 class AgentState(TypedDict):
@@ -20,4 +26,4 @@ class AgentState(TypedDict):
     intent: str                    # 识别意图: query_customer | knowledge_query | mixed
     customer_context: dict         # 当前客户信息缓存
     knowledge_results: list        # RAG 检索结果
-    mcp_results: dict              # MCP 调用结果
+    mcp_results: Annotated[dict, _merge_dicts]  # MCP 调用结果（支持并行合并）

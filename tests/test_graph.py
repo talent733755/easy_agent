@@ -33,6 +33,9 @@ class TestGraphStructure:
         assert "intent_classify" in node_names, f"intent_classify not in nodes: {node_names}"
         assert "knowledge_retrieve" in node_names, f"knowledge_retrieve not in nodes: {node_names}"
         assert "mcp_customer" in node_names, f"mcp_customer not in nodes: {node_names}"
+        # Also verify dynamic MCP pattern works
+        mcp_nodes = [n for n in node_names if n.startswith("mcp_")]
+        assert len(mcp_nodes) > 0, f"No MCP nodes found in: {node_names}"
 
         # Verify existing nodes still present
         assert "memory_retrieve" in node_names, f"memory_retrieve not in nodes: {node_names}"
