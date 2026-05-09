@@ -14,7 +14,7 @@ class TestGateway:
         client = TestClient(app)
         resp = client.post(
             "/customer/tools/get_customer",
-            json={"customer_name": "张"},
+            json={"customer_name": "zhang"},
         )
         assert resp.status_code == 200
         data = resp.json()
