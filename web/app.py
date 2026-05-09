@@ -65,6 +65,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
+        nonlocal graph
         """WebSocket endpoint for real-time chat.
 
         Message format (JSON):
