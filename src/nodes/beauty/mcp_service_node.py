@@ -137,9 +137,8 @@ def create_mcp_service_node(mcp_config: dict, model=None):
         except Exception:
             data = {"error": f"调用 {service_name} 服务失败"}
 
-        # 6. 返回结果
+        # 6. 返回结果（数据统一放 mcp_results，避免并行写 customer_context 冲突）
         return {
-            "customer_context": data if service_name == "customer" else state.get("customer_context", {}),
             "mcp_results": {service_name: data},
         }
 

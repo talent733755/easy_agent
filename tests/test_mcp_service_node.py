@@ -131,8 +131,7 @@ class TestCreateMCPServiceNode:
             "mcp_results": {},
         }
         result = node(state)
-        assert result["customer_context"]["name"] == "张女士"
-        assert "customer" in result["mcp_results"]
+        assert result["mcp_results"]["customer"]["name"] == "张女士"
 
     @patch("src.nodes.beauty.mcp_service_node.httpx")
     def test_node_handles_http_error(self, mock_httpx):
