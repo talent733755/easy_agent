@@ -174,9 +174,18 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                         # Find and send AI response
                         for m in reversed(result["messages"]):
                             if isinstance(m, AIMessage) and m.content:
+                                # content 可能是字符串或 content blocks 列表
+                                content = m.content
+                                if isinstance(content, list):
+                                    # 提取 text 块，跳过 thinking 等
+                                    text_parts = [
+                                        block["text"] for block in content
+                                        if isinstance(block, dict) and block.get("type") == "text"
+                                    ]
+                                    content = "\n".join(text_parts) if text_parts else str(content)
                                 await websocket.send_json({
                                     "type": "response",
-                                    "content": m.content,
+                                    "content": content,
                                 })
                                 break
 
