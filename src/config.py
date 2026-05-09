@@ -18,8 +18,14 @@ class KnowledgeBaseConfig:
 
 
 @dataclass
+class MCPGatewayConfig:
+    url: str = "http://localhost:3001"
+    port: int = 3001
+
+
+@dataclass
 class MCPServerConfig:
-    url: str
+    url: str = ""
     timeout: int = 30
     intent: str = ""                        # 该 MCP 对应的意图类型
     endpoints: list[dict] = field(default_factory=list)  # 端点描述
@@ -34,8 +40,8 @@ class WebConfig:
 @dataclass
 class BeautyConfig:
     knowledge_base: KnowledgeBaseConfig
+    mcp_gateway: MCPGatewayConfig
     mcp_servers: dict[str, MCPServerConfig]
-    intent_prompt: str
     web: WebConfig
 
     @classmethod
@@ -48,6 +54,12 @@ class BeautyConfig:
         knowledge_base = KnowledgeBaseConfig(
             base_dir=kb_data.get("base_dir", ""),
             indexes=indexes,
+        )
+
+        gateway_data = d.get("mcp_gateway", {})
+        mcp_gateway = MCPGatewayConfig(
+            url=gateway_data.get("url", "http://localhost:3001"),
+            port=gateway_data.get("port", 3001),
         )
 
         mcp_servers = {
@@ -63,8 +75,8 @@ class BeautyConfig:
 
         return cls(
             knowledge_base=knowledge_base,
+            mcp_gateway=mcp_gateway,
             mcp_servers=mcp_servers,
-            intent_prompt=d.get("intent_prompt", ""),
             web=web,
         )
 

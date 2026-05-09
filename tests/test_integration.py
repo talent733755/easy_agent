@@ -409,7 +409,7 @@ class TestMCPServerStartup:
         assert "customer" in beauty_config.beauty.mcp_servers
 
         customer_mcp = beauty_config.beauty.mcp_servers["customer"]
-        assert customer_mcp.url == "http://localhost:3001"
+        assert customer_mcp.url == ""
         assert customer_mcp.timeout == 30
 
     def test_knowledge_base_config_loaded(self, beauty_config):
