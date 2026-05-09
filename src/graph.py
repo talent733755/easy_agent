@@ -89,7 +89,7 @@ def build_graph(checkpointer: BaseCheckpointSaver = None) -> StateGraph:
     builder = StateGraph(AgentState)
 
     # Add beauty nodes (Phase 1)
-    builder.add_node("intent_classify", intent_classify_node)
+    builder.add_node("intent_classify", lambda s: intent_classify_node(s, config=config))
 
     # Knowledge retrieve node with config
     beauty_config = config.beauty

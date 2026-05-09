@@ -65,11 +65,13 @@ def test_intent_node_with_mocked_llm():
     mock_response = MagicMock()
     mock_response.content = '{"intent": "query_customer", "customer_name": "张女士", "query_topic": ""}'
 
-    with patch("src.nodes.beauty.intent_node.ChatOpenAI") as MockChatOpenAI:
-        mock_llm = MagicMock()
-        mock_llm.invoke.return_value = mock_response
-        MockChatOpenAI.return_value = mock_llm
+    mock_llm = MagicMock()
+    mock_llm.invoke.return_value = mock_response
 
+    mock_provider = MagicMock()
+    mock_provider.get_model.return_value = mock_llm
+
+    with patch("src.providers.factory.get_provider", return_value=mock_provider):
         result = intent_classify_node(state)
 
         assert result["intent"] == "query_customer"
