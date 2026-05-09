@@ -1,8 +1,9 @@
 """Test intent classification node."""
 from unittest.mock import patch, MagicMock
 from langchain_core.messages import HumanMessage
-from src.nodes.beauty.intent_node import intent_classify_node, _rule_based_classify
+from src.nodes.beauty.intent_node import intent_classify_node, _rule_based_classify, _build_intent_prompt
 from src.state import AgentState
+from src.config import MCPServerConfig, BeautyConfig, KnowledgeBaseConfig, WebConfig
 
 
 def create_test_state(message: str) -> AgentState:
@@ -101,3 +102,33 @@ def test_intent_node_empty_message():
     result = intent_classify_node(state)
 
     assert result["intent"] == "general"
+
+
+class TestBuildIntentPrompt:
+    def test_includes_dynamic_mcp_intents(self):
+        """Dynamic prompt should include MCP service intents from config."""
+        # Build a mock config with a performance MCP service
+        mock_config = MagicMock()
+        mock_config.beauty.mcp_servers = {
+            "customer": MCPServerConfig(
+                url="http://localhost:3001",
+                intent="query_customer",
+                endpoints=[{"name": "get_customer", "description": "查客户"}],
+            ),
+            "performance": MCPServerConfig(
+                url="http://localhost:3002",
+                intent="query_performance",
+                endpoints=[{"name": "get_daily", "description": "查业绩"}],
+            ),
+        }
+        prompt = _build_intent_prompt("广州今天业绩", mock_config)
+        assert "query_performance" in prompt
+        assert "query_customer" in prompt
+        assert "knowledge_query" in prompt
+
+    def test_without_config(self):
+        """Should produce prompt with base intents when config is None."""
+        prompt = _build_intent_prompt("hello", None)
+        assert "knowledge_query" in prompt
+        assert "general" in prompt
+        assert "mixed" in prompt
