@@ -103,9 +103,12 @@ def build_graph(checkpointer: BaseCheckpointSaver = None) -> StateGraph:
     mcp_configs = beauty_config.mcp_servers if beauty_config else {}
     registered_mcp_nodes = []
 
+    # 从 gateway 推导 MCP 服务 URL
+    gateway_url = beauty_config.mcp_gateway.url if beauty_config else "http://localhost:3001"
+
     for service_name, svc_config in mcp_configs.items():
         svc_dict = {
-            "url": svc_config.url,
+            "url": f"{gateway_url}/{service_name}",
             "timeout": svc_config.timeout,
             "intent": svc_config.intent,
             "endpoints": svc_config.endpoints,
