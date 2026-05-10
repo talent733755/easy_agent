@@ -6,6 +6,8 @@ class ChatClient {
         this.sessionId = null;
         this.connected = false;
         this.pendingToolApproval = null;
+        this.heartbeatInterval = null;
+        this.heartbeatTimeout = 30000;  // 30 seconds
 
         // DOM elements
         this.chatContainer = document.getElementById('chat-container');
@@ -42,6 +44,22 @@ class ChatClient {
         }
     }
 
+    startHeartbeat() {
+        this.stopHeartbeat();
+        this.heartbeatInterval = setInterval(() => {
+            if (this.connected && this.ws.readyState === WebSocket.OPEN) {
+                this.ws.send(JSON.stringify({ type: 'ping' }));
+            }
+        }, this.heartbeatTimeout);
+    }
+
+    stopHeartbeat() {
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
+        }
+    }
+
     connect() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -52,11 +70,13 @@ class ChatClient {
         this.ws.onopen = () => {
             this.connected = true;
             this.updateStatus(true, 'Connected');
+            this.startHeartbeat();
         };
 
         this.ws.onclose = () => {
             this.connected = false;
             this.updateStatus(false, 'Disconnected');
+            this.stopHeartbeat();
             this.addSystemMessage('Connection closed. Refresh to reconnect.');
         };
 
@@ -78,6 +98,14 @@ class ChatClient {
                 this.sessionId = data.session_id;
                 this.sessionDisplay.textContent = `Session: ${data.session_id}`;
                 this.addSystemMessage(`Connected to ${data.provider} (Session: ${data.session_id})`);
+                break;
+
+            case 'pong':
+                // Heartbeat response, no action needed
+                break;
+
+            case 'progress':
+                this.updateProgressIndicator(data.content);
                 break;
 
             case 'response':
@@ -158,6 +186,7 @@ class ChatClient {
     }
 
     showTypingIndicator() {
+        this.removeTypingIndicator();
         const indicator = document.createElement('div');
         indicator.className = 'message agent typing';
         indicator.innerHTML = `
@@ -165,9 +194,23 @@ class ChatClient {
                 <span></span>
                 <span></span>
                 <span></span>
+                <span class="typing-label">处理中...</span>
             </div>
         `;
         this.chatContainer.appendChild(indicator);
+        this.scrollToBottom();
+    }
+
+    updateProgressIndicator(label) {
+        let indicator = this.chatContainer.querySelector('.typing');
+        if (!indicator) {
+            this.showTypingIndicator();
+            indicator = this.chatContainer.querySelector('.typing');
+        }
+        const labelEl = indicator.querySelector('.typing-label');
+        if (labelEl) {
+            labelEl.textContent = label;
+        }
         this.scrollToBottom();
     }
 
@@ -238,14 +281,23 @@ class ChatClient {
         // Inline code
         html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
 
+        // Headings
+        html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+        html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+        html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
         // Bold
         html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
 
         // Italic
         html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
 
-        // Line breaks
-        html = html.replace(/\n/g, '<br>');
+        // Unordered list items
+        html = html.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
+        html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+
+        // Line breaks (skip lines that are block elements)
+        html = html.replace(/\n(?!<[hul])/g, '<br>');
 
         return html;
     }
