@@ -116,6 +116,11 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 data = await websocket.receive_json()
                 msg_type = data.get("type", "message")
 
+                # Handle ping/pong heartbeat
+                if msg_type == "ping":
+                    await websocket.send_json({"type": "pong"})
+                    continue
+
                 if msg_type == "message":
                     user_input = data.get("content", "").strip()
                     if not user_input:
@@ -134,9 +139,44 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                     state["messages"].append(HumanMessage(content=user_input))
                     state["iteration_count"] = 0
 
+                    # Node name to display label mapping
+                    NODE_LABELS = {
+                        "intent_classify": "🔍 分析意图...",
+                        "knowledge_retrieve": "📚 检索知识库...",
+                        "memory_retrieve": "🧠 检索记忆...",
+                        "agent": "🤔 生成回复...",
+                        "tool_executor": "🔧 执行工具...",
+                        "observe": "👁 观察结果...",
+                        "human_gate": "🚦 检查审批...",
+                        "memory_learn": "💾 更新记忆...",
+                        "nudge_check": "📊 检查迭代...",
+                        "memory_save": "💾 保存记忆...",
+                    }
+
+                    async def send_progress(node_name: str):
+                        # Check for MCP service nodes
+                        label = NODE_LABELS.get(node_name)
+                        if label is None and node_name.startswith("mcp_"):
+                            svc = node_name[4:]
+                            label = f"🔌 查询 {svc} 服务..."
+                        if label:
+                            await websocket.send_json({
+                                "type": "progress",
+                                "content": label,
+                            })
+
                     try:
-                        # Invoke graph
-                        result = graph.invoke(state, graph_config)
+                        # Stream graph execution for progress tracking
+                        result = None
+                        async for chunk in graph.astream(state, graph_config, stream_mode="updates"):
+                            for node_name, node_output in chunk.items():
+                                await send_progress(node_name)
+                                result = node_output
+
+                        # Re-fetch final state if needed
+                        final_state = graph.get_state(graph_config)
+                        if final_state and final_state.values:
+                            result = final_state.values
 
                         # Handle interrupts (tool approval)
                         while True:
@@ -163,13 +203,24 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                                 if response.get("type") == "tool_response":
                                     approved = response.get("approved", False)
                                     from langgraph.types import Command
-                                    result = graph.invoke(
+                                    async for chunk in graph.astream(
                                         Command(resume={"approved": approved}),
                                         graph_config,
-                                    )
+                                        stream_mode="updates",
+                                    ):
+                                        for node_name in chunk:
+                                            await send_progress(node_name)
+                                    final_state = graph.get_state(graph_config)
+                                    if final_state and final_state.values:
+                                        result = final_state.values
                             else:
                                 from langgraph.types import Command
-                                result = graph.invoke(Command(resume={}), graph_config)
+                                async for chunk in graph.astream(Command(resume={}), graph_config, stream_mode="updates"):
+                                    for node_name in chunk:
+                                        await send_progress(node_name)
+                                final_state = graph.get_state(graph_config)
+                                if final_state and final_state.values:
+                                    result = final_state.values
 
                         # Find and send AI response
                         for m in reversed(result["messages"]):
