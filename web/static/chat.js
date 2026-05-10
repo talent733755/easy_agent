@@ -9,6 +9,13 @@ class ChatClient {
         this.heartbeatInterval = null;
         this.heartbeatTimeout = 30000;  // 30 seconds
 
+        // Reconnection properties
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 5;
+        this.reconnectDelay = 2000;  // Initial 2 seconds
+        this.isReconnecting = false;
+        this.reconnectTimer = null;
+
         // DOM elements
         this.chatContainer = document.getElementById('chat-container');
         this.messageInput = document.getElementById('message-input');
@@ -60,6 +67,18 @@ class ChatClient {
         }
     }
 
+    attemptReconnect() {
+        this.isReconnecting = true;
+        this.reconnectAttempts++;
+        const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+
+        this.updateStatus(false, `重新连接中... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+
+        this.reconnectTimer = setTimeout(() => {
+            this.connect();
+        }, delay);
+    }
+
     connect() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -71,13 +90,27 @@ class ChatClient {
             this.connected = true;
             this.updateStatus(true, 'Connected');
             this.startHeartbeat();
+            this.reconnectAttempts = 0;
+            this.isReconnecting = false;
         };
 
         this.ws.onclose = () => {
             this.connected = false;
-            this.updateStatus(false, 'Disconnected');
             this.stopHeartbeat();
-            this.addSystemMessage('Connection closed. Refresh to reconnect.');
+
+            // Clear reconnect timer
+            if (this.reconnectTimer) {
+                clearTimeout(this.reconnectTimer);
+                this.reconnectTimer = null;
+            }
+
+            this.updateStatus(false, '已断开连接');
+
+            if (!this.isReconnecting && this.reconnectAttempts < this.maxReconnectAttempts) {
+                this.attemptReconnect();
+            } else if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+                this.addSystemMessage('连接失败，请刷新页面。');
+            }
         };
 
         this.ws.onerror = (error) => {
