@@ -80,31 +80,57 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         """
         await websocket.accept()
 
+        # Session expiry time: 2 hours
+        SESSION_EXPIRY_SECONDS = 2 * 60 * 60
+
         # Generate session ID
         session_id = str(uuid.uuid4())[:8]
         graph_config = {"configurable": {"thread_id": session_id}}
+        resumed = False
 
-        # Initialize state
-        state: dict = {
-            "messages": [],
-            "tools": [],
-            "context_window": {
-                "used_tokens": 0,
-                "max_tokens": 128000,
-                "threshold": config.agent["context_compression_threshold"],
-            },
-            "memory_context": "",
-            "user_profile": "",
-            "agent_notes": "",
-            "pending_human_input": False,
-            "iteration_count": 0,
-            "max_iterations": config.agent["max_iterations"],
-            "nudge_counter": 0,
-            "provider_name": config.active_provider,
-            "session_id": session_id,
-        }
+        # Wait for first message - check for resume request
+        first_data = await websocket.receive_json()
+        first_msg_type = first_data.get("type", "message")
 
-        sessions[session_id] = state
+        if first_msg_type == "resume":
+            old_session_id = first_data.get("session_id")
+            if old_session_id and old_session_id in sessions:
+                # Check if session is not expired
+                last_active = session_last_active.get(old_session_id, 0)
+                if time.time() - last_active < SESSION_EXPIRY_SECONDS:
+                    # Resume old session
+                    session_id = old_session_id
+                    graph_config = {"configurable": {"thread_id": session_id}}
+                    state = sessions[session_id]
+                    resumed = True
+                else:
+                    # Session expired, clean up
+                    if old_session_id in sessions:
+                        del sessions[old_session_id]
+                    if old_session_id in session_last_active:
+                        del session_last_active[old_session_id]
+
+        # Initialize state if not resumed
+        if not resumed:
+            state: dict = {
+                "messages": [],
+                "tools": [],
+                "context_window": {
+                    "used_tokens": 0,
+                    "max_tokens": 128000,
+                    "threshold": config.agent["context_compression_threshold"],
+                },
+                "memory_context": "",
+                "user_profile": "",
+                "agent_notes": "",
+                "pending_human_input": False,
+                "iteration_count": 0,
+                "max_iterations": config.agent["max_iterations"],
+                "nudge_counter": 0,
+                "provider_name": config.active_provider,
+                "session_id": session_id,
+            }
+            sessions[session_id] = state
 
         try:
             # Send session info
@@ -112,12 +138,25 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 "type": "session",
                 "session_id": session_id,
                 "provider": config.active_provider,
+                "resumed": resumed,
             })
 
+            # Update session last active timestamp
+            session_last_active[session_id] = time.time()
+
+            # Process first message if it's not a resume request
+            data = first_data
+            msg_type = first_msg_type
+            first_message = True
+
             while True:
-                # Receive message
-                data = await websocket.receive_json()
-                msg_type = data.get("type", "message")
+                # Only receive new message if we've already processed the first one
+                if first_message:
+                    first_message = False
+                else:
+                    # Receive message
+                    data = await websocket.receive_json()
+                    msg_type = data.get("type", "message")
 
                 # Update session last active timestamp
                 session_last_active[session_id] = time.time()
@@ -125,6 +164,11 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 # Handle ping/pong heartbeat
                 if msg_type == "ping":
                     await websocket.send_json({"type": "pong"})
+                    continue
+
+                # Handle resume request (only valid as first message)
+                if msg_type == "resume":
+                    # Ignore resume requests after first message
                     continue
 
                 if msg_type == "message":
