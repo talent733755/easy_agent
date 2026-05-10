@@ -3,6 +3,7 @@
 import json
 import uuid
 import asyncio
+import time
 from typing import Optional
 from pathlib import Path
 
@@ -39,6 +40,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
 
     # Store active sessions
     sessions: dict = {}
+    # Track session last active timestamp for expiry check
+    session_last_active: dict = {}
 
     # Build graph with checkpointer
     checkpointer = MemorySaver()
@@ -115,6 +118,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 # Receive message
                 data = await websocket.receive_json()
                 msg_type = data.get("type", "message")
+
+                # Update session last active timestamp
+                session_last_active[session_id] = time.time()
 
                 # Handle ping/pong heartbeat
                 if msg_type == "ping":
