@@ -19,6 +19,8 @@ def parse_args():
     parser.add_argument("--port", "-p", type=int, default=8080, help="Port to bind")
     parser.add_argument("--config", "-c", help="Path to config.yaml")
     parser.add_argument("--reload", "-r", action="store_true", help="Enable auto-reload")
+    parser.add_argument("--ws-ping-interval", type=int, default=30, help="WebSocket ping interval in seconds")
+    parser.add_argument("--ws-ping-timeout", type=int, default=300, help="WebSocket ping timeout in seconds")
     return parser.parse_args()
 
 
@@ -40,6 +42,8 @@ def main():
         host=args.host,
         port=args.port,
         reload=args.reload,
+        ws_ping_interval=args.ws_ping_interval,
+        ws_ping_timeout=args.ws_ping_timeout,
     )
 
 

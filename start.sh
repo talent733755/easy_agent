@@ -66,7 +66,7 @@ start_process() {
 }
 
 # ---- 启动服务 ----
-start_process "web" "python web_app.py --host 0.0.0.0 --port 8080"
+start_process "web" "python web_app.py --host 0.0.0.0 --port 8080 --ws-ping-interval 30 --ws-ping-timeout 300"
 start_process "mcp_gateway" "python -m uvicorn mcp_servers.gateway:app --host 0.0.0.0 --port 3001"
 
 echo ""
