@@ -25,6 +25,7 @@ class MCPGatewayConfig:
 
 @dataclass
 class MCPServerConfig:
+    name: str = ""
     url: str = ""
     timeout: int = 30
     intent: str = ""                        # 该 MCP 对应的意图类型
@@ -57,9 +58,10 @@ class BeautyConfig:
         )
 
         gateway_data = d.get("mcp_gateway", {})
+        _defaults = MCPGatewayConfig()
         mcp_gateway = MCPGatewayConfig(
-            url=gateway_data.get("url", "http://localhost:3001"),
-            port=gateway_data.get("port", 3001),
+            url=gateway_data.get("url", _defaults.url),
+            port=gateway_data.get("port", _defaults.port),
         )
 
         mcp_servers = {

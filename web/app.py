@@ -322,9 +322,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                     pass
 
         except WebSocketDisconnect:
-            # Clean up session
-            if session_id in sessions:
-                del sessions[session_id]
+            # Don't delete session on disconnect - allow resume within expiry window
+            # Session will be cleaned up when expired (SESSION_EXPIRY_SECONDS = 2 hours)
+            pass
 
         except Exception as e:
             await websocket.send_json({

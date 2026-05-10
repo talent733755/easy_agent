@@ -76,22 +76,17 @@ beauty:
 
   mcp_servers:
     customer:
+      name: "customer"
+      url: "http://localhost:3001/customer"
       timeout: 30
       intent: "query_customer"
       endpoints:
         - name: get_customer
-          description: "按姓名查客户信息"
+          description: "按用户ID或手机号查客户档案。参数: customer_name (客户姓名) 或 phone (手机号，如'18102481137')"
         - name: get_consumption
-          description: "按客户ID查消费记录"
+          description: "查客户消费记录。参数: customer_id (客户ID，如'C001')"
         - name: get_service_history
-          description: "按客户ID查服务历史"
-
-    user_profile:
-      timeout: 30
-      intent: "query_customer"
-      endpoints:
-        - name: get_user_info
-          description: "按用户ID或手机号查用户档案和行为记录"
+          description: "查客户服务历史。参数: customer_id (客户ID)"
 
   web:
     host: "0.0.0.0"
