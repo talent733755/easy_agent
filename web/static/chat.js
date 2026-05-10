@@ -92,6 +92,15 @@ class ChatClient {
             this.startHeartbeat();
             this.reconnectAttempts = 0;
             this.isReconnecting = false;
+
+            // Check for old session_id and send resume request
+            const oldSessionId = localStorage.getItem('easy_agent_session_id');
+            if (oldSessionId) {
+                this.ws.send(JSON.stringify({
+                    type: 'resume',
+                    session_id: oldSessionId
+                }));
+            }
         };
 
         this.ws.onclose = () => {
