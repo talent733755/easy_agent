@@ -129,8 +129,15 @@ class ChatClient {
         switch (data.type) {
             case 'session':
                 this.sessionId = data.session_id;
+                // Store session_id in localStorage for reconnection
+                localStorage.setItem('easy_agent_session_id', data.session_id);
                 this.sessionDisplay.textContent = `Session: ${data.session_id}`;
-                this.addSystemMessage(`Connected to ${data.provider} (Session: ${data.session_id})`);
+                // Show appropriate message based on resumed flag
+                if (data.resumed) {
+                    this.addSystemMessage(`已恢复会话 ${data.session_id} (${data.provider})`);
+                } else {
+                    this.addSystemMessage(`Connected to ${data.provider} (Session: ${data.session_id})`);
+                }
                 break;
 
             case 'pong':
