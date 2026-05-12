@@ -17,6 +17,8 @@ from langchain_core.messages import HumanMessage, AIMessage
 
 from src.config import load_config
 from src.graph import build_graph
+from src.training_graph import build_training_graph
+from src.memory.conversation_store import ConversationStore
 
 
 def create_app(config_path: Optional[str] = None) -> FastAPI:
@@ -43,9 +45,17 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     # Track session last active timestamp for expiry check
     session_last_active: dict = {}
 
-    # Build graph with checkpointer
+    # Build graphs with checkpointer (one per graph-type agent)
     checkpointer = MemorySaver()
-    graph = build_graph(checkpointer=checkpointer)
+    graphs = {
+        "beauty": build_graph(checkpointer=checkpointer),
+        "training": build_training_graph(checkpointer=checkpointer),
+    }
+
+    # Conversation store
+    import os
+    data_dir = os.path.expanduser(config.memory.get("data_dir", "~/.easy_agent"))
+    conv_store = ConversationStore(os.path.join(data_dir, "conversations.db"))
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request):
@@ -66,9 +76,70 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             }
         )
 
+    @app.get("/api/agents")
+    async def get_agents():
+        """Return list of available agents."""
+        agents_list = []
+        for aid, acfg in config.agents.items():
+            agents_list.append({
+                "id": aid,
+                "name": acfg.name,
+                "icon": acfg.icon,
+                "badge": acfg.badge,
+                "description": acfg.description,
+                "type": acfg.type,
+            })
+        return JSONResponse(content={"agents": agents_list})
+
+    @app.get("/api/conversations")
+    async def list_conversations(agent_id: str | None = None):
+        """List conversations, optionally filtered by agent."""
+        convs = conv_store.get_conversations(agent_id=agent_id)
+        # Group by time
+        now = time.time()
+        today_start = now - (now % 86400)
+        yesterday_start = today_start - 86400
+        grouped = {"today": [], "yesterday": [], "earlier": []}
+        for c in convs:
+            title = c["title"] or "新对话"
+            item = {
+                "id": c["id"],
+                "agent_id": c["agent_id"],
+                "title": title,
+                "time": time.strftime("%H:%M", time.localtime(c["updated_at"])),
+                "date": time.strftime("%Y/%m/%d", time.localtime(c["updated_at"])),
+            }
+            if c["updated_at"] >= today_start:
+                grouped["today"].append(item)
+            elif c["updated_at"] >= yesterday_start:
+                grouped["yesterday"].append(item)
+            else:
+                grouped["earlier"].append(item)
+        return JSONResponse(content={"conversations": grouped})
+
+    @app.delete("/api/conversations/{conv_id}")
+    async def delete_conversation(conv_id: str):
+        """Delete a conversation and its messages."""
+        ok = conv_store.delete_conversation(conv_id)
+        return JSONResponse(content={"deleted": ok})
+
+    @app.get("/api/conversations/{conv_id}/messages")
+    async def get_messages(conv_id: str):
+        """Get all messages in a conversation."""
+        msgs = conv_store.get_messages(conv_id)
+        return JSONResponse(content={"messages": msgs})
+
+    @app.post("/api/conversations/new")
+    async def new_conversation(request: Request):
+        """Create a new conversation."""
+        body = await request.json()
+        agent_id = body.get("agent_id", "beauty")
+        conv_id = conv_store.create_conversation(agent_id=agent_id)
+        return JSONResponse(content={"id": conv_id, "agent_id": agent_id})
+
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
-        nonlocal graph
+        nonlocal graphs
         """WebSocket endpoint for real-time chat.
 
         Message format (JSON):
@@ -92,6 +163,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         first_data = await websocket.receive_json()
         first_msg_type = first_data.get("type", "message")
 
+        # Track current conversation and agent
+        current_conv_id = None
+        current_agent_id = first_data.get("agent_id", "beauty")
+
         if first_msg_type == "resume":
             old_session_id = first_data.get("session_id")
             if old_session_id and old_session_id in sessions:
@@ -103,6 +178,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                     graph_config = {"configurable": {"thread_id": session_id}}
                     state = sessions[session_id]
                     resumed = True
+                    current_conv_id = state.get("conversation_id")
                 else:
                     # Session expired, clean up
                     if old_session_id in sessions:
@@ -129,6 +205,12 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 "nudge_counter": 0,
                 "provider_name": config.active_provider,
                 "session_id": session_id,
+                # Training fields
+                "training_phase": "",
+                "training_scenario": "",
+                "training_context": {},
+                "training_score": {},
+                "training_history": [],
             }
             sessions[session_id] = state
 
@@ -176,6 +258,14 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                     if not user_input:
                         continue
 
+                    # Update agent and conversation context from message
+                    msg_agent_id = data.get("agent_id", current_agent_id)
+                    if msg_agent_id and msg_agent_id != current_agent_id:
+                        current_agent_id = msg_agent_id
+                        current_conv_id = None
+                    if data.get("conversation_id"):
+                        current_conv_id = data["conversation_id"]
+
                     # Handle slash commands
                     if user_input.startswith("/"):
                         cmd_response = await handle_command(user_input, state)
@@ -185,9 +275,28 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                         })
                         continue
 
+                    # Check if this is a workflow agent (external API)
+                    agent_cfg = config.agents.get(current_agent_id)
+                    if agent_cfg and agent_cfg.type == "workflow":
+                        await handle_workflow_agent(websocket, agent_cfg, user_input, current_conv_id)
+                        continue
+
+                    # Select the correct graph for this agent
+                    active_graph = graphs.get(current_agent_id) or graphs.get("beauty")
+
                     # Add user message
                     state["messages"].append(HumanMessage(content=user_input))
                     state["iteration_count"] = 0
+
+                    # Create conversation on first message, or use existing one
+                    if not current_conv_id:
+                        current_conv_id = conv_store.create_conversation(
+                            agent_id=current_agent_id,
+                            title=user_input[:30],
+                        )
+                        state["conversation_id"] = current_conv_id
+                    # Save user message to conversation store
+                    conv_store.add_message(current_conv_id, "user", user_input)
 
                     # Node name to display label mapping
                     NODE_LABELS = {
@@ -201,6 +310,13 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                         "memory_learn": "💾 更新记忆...",
                         "nudge_check": "📊 检查迭代...",
                         "memory_save": "💾 保存记忆...",
+                        # Training nodes
+                        "welcome": " 欢迎...",
+                        "wait_input": "⏳ 等待输入...",
+                        "router": "🔀 路由中...",
+                        "setup": "⚙️ 对练设置...",
+                        "roleplay": " 对练对话中...",
+                        "evaluate": "📊 评价中...",
                     }
 
                     async def send_progress(node_name: str):
@@ -218,19 +334,19 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                     try:
                         # Stream graph execution for progress tracking
                         result = None
-                        async for chunk in graph.astream(state, graph_config, stream_mode="updates"):
+                        async for chunk in active_graph.astream(state, graph_config, stream_mode="updates"):
                             for node_name, node_output in chunk.items():
                                 await send_progress(node_name)
                                 result = node_output
 
                         # Re-fetch final state if needed
-                        final_state = graph.get_state(graph_config)
+                        final_state = active_graph.get_state(graph_config)
                         if final_state and final_state.values:
                             result = final_state.values
 
                         # Handle interrupts (tool approval)
                         while True:
-                            gs = graph.get_state(graph_config)
+                            gs = active_graph.get_state(graph_config)
                             if not gs.next:
                                 break
                             tasks = gs.tasks
@@ -253,22 +369,22 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                                 if response.get("type") == "tool_response":
                                     approved = response.get("approved", False)
                                     from langgraph.types import Command
-                                    async for chunk in graph.astream(
+                                    async for chunk in active_graph.astream(
                                         Command(resume={"approved": approved}),
                                         graph_config,
                                         stream_mode="updates",
                                     ):
                                         for node_name in chunk:
                                             await send_progress(node_name)
-                                    final_state = graph.get_state(graph_config)
+                                    final_state = active_graph.get_state(graph_config)
                                     if final_state and final_state.values:
                                         result = final_state.values
                             else:
                                 from langgraph.types import Command
-                                async for chunk in graph.astream(Command(resume={}), graph_config, stream_mode="updates"):
+                                async for chunk in active_graph.astream(Command(resume={}), graph_config, stream_mode="updates"):
                                     for node_name in chunk:
                                         await send_progress(node_name)
-                                final_state = graph.get_state(graph_config)
+                                final_state = active_graph.get_state(graph_config)
                                 if final_state and final_state.values:
                                     result = final_state.values
 
@@ -288,6 +404,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                                     "type": "response",
                                     "content": content,
                                 })
+                                # Save assistant message to conversation store
+                                if current_conv_id:
+                                    conv_store.add_message(current_conv_id, "assistant", content)
                                 break
 
                         # Update state
@@ -310,7 +429,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                                 "content": f"Error with {config.active_provider}, switching to {config.fallback_provider}...",
                             })
                             config.active_provider = config.fallback_provider
-                            graph = build_graph(checkpointer=checkpointer)
+                            graphs["beauty"] = build_graph(checkpointer=checkpointer)
+                            graphs["training"] = build_training_graph(checkpointer=checkpointer)
                         else:
                             await websocket.send_json({
                                 "type": "error",
@@ -330,6 +450,64 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             await websocket.send_json({
                 "type": "error",
                 "content": str(e),
+            })
+
+    async def handle_workflow_agent(
+        websocket: WebSocket,
+        agent_cfg,
+        user_input: str,
+        conv_id: str | None,
+    ):
+        """Handle a workflow agent request (external API call)."""
+        # Create or use conversation
+        nonlocal conv_store
+        if not conv_id:
+            conv_id = conv_store.create_conversation(
+                agent_id=agent_cfg.name,
+                title=user_input[:30],
+            )
+        conv_store.add_message(conv_id, "user", user_input)
+
+        # Send progress
+        await websocket.send_json({
+            "type": "progress",
+            "content": f"调用 {agent_cfg.name} 工作流...",
+        })
+
+        try:
+            import httpx
+            headers = {}
+            if agent_cfg.api_key:
+                headers["Authorization"] = f"Bearer {agent_cfg.api_key}"
+            # Coze API uses {"topic": "..."} as input
+            async with httpx.AsyncClient(timeout=120) as client:
+                resp = await client.post(
+                    agent_cfg.endpoint,
+                    json={"topic": user_input},
+                    headers=headers,
+                )
+                if resp.status_code == 200:
+                    result = resp.json()
+                    # Coze XHS workflow returns: {note_content: "...", image_url: "..."}
+                    note = result.get("note_content", "")
+                    img = result.get("image_url", "")
+                    reply = note
+                    if img:
+                        reply += f"\n\n图片: {img}"
+                else:
+                    reply = f"工作流调用失败 (HTTP {resp.status_code}): {resp.text}"
+
+            await websocket.send_json({
+                "type": "response",
+                "content": reply,
+            })
+            conv_store.add_message(conv_id, "assistant", reply)
+
+        except Exception as e:
+            error_msg = f"工作流调用异常: {str(e)}"
+            await websocket.send_json({
+                "type": "error",
+                "content": error_msg,
             })
 
     async def handle_command(cmd: str, state: dict) -> str:

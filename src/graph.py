@@ -23,22 +23,31 @@ def _build_agent_model(config: AppConfig):
 
 
 def _build_mcp_intent_routes(mcp_configs: dict) -> dict:
-    """从 MCP config 构建意图到节点名的路由映射。"""
+    """从 MCP config 构建意图到节点名的路由映射（支持同一意图对应多个服务）。"""
     routes = {}
     for name, svc_config in mcp_configs.items():
         intent = getattr(svc_config, "intent", "")
         if intent:
-            routes[intent] = f"mcp_{name}"
+            node_name = f"mcp_{name}"
+            if intent in routes:
+                # 同一意图可对应多个 MCP 服务 → fan-out
+                if isinstance(routes[intent], list):
+                    routes[intent].append(node_name)
+                else:
+                    routes[intent] = [routes[intent], node_name]
+            else:
+                routes[intent] = node_name
     return routes
 
 
-def _route_intent(state: AgentState, mcp_routes: dict = None) -> str:
+def _route_intent(state: AgentState, mcp_routes: dict = None) -> str | list:
     """Route based on intent classification.
 
     Routes:
         - "knowledge": intent is "knowledge_query" -> knowledge_retrieve only
-        - MCP route: intent matches a registered MCP service intent -> that MCP node
-        - "mixed": intent is "mixed" -> knowledge (fan-out handles MCP nodes)
+        - MCP route: intent matches a registered MCP service intent -> that MCP node(s)
+          (if multiple services share the same intent, returns a list for fan-out)
+        - "mixed": intent is "mixed" -> fan-out to knowledge_retrieve + all MCP nodes
         - "skip": intent is "general" or unknown -> skip, go to memory_retrieve
     """
     intent = state.get("intent", "general")
@@ -46,9 +55,19 @@ def _route_intent(state: AgentState, mcp_routes: dict = None) -> str:
     if intent == "knowledge_query":
         return "knowledge"
     elif intent == "mixed":
-        return "knowledge"  # Fan-out handles MCP nodes
+        targets = ["knowledge"]
+        for mcp_route in (mcp_routes or {}).values():
+            if isinstance(mcp_route, list):
+                targets.extend(mcp_route)
+            else:
+                targets.append(mcp_route)
+        return targets
     elif intent in (mcp_routes or {}):
-        return mcp_routes[intent]
+        route = mcp_routes[intent]
+        # 如果多个服务共享同一意图，返回列表触发 fan-out
+        if isinstance(route, list):
+            return route
+        return route
     else:
         return "skip"
 
@@ -141,11 +160,6 @@ def build_graph(checkpointer: BaseCheckpointSaver = None) -> StateGraph:
     for svc_name in registered_mcp_nodes:
         route_targets[f"mcp_{svc_name}"] = f"mcp_{svc_name}"
     builder.add_conditional_edges("intent_classify", lambda s: _route_intent(s, mcp_routes), route_targets)
-
-    # Fan-out edges for parallel execution (mixed intent)
-    builder.add_edge("intent_classify", "knowledge_retrieve")
-    for svc_name in registered_mcp_nodes:
-        builder.add_edge("intent_classify", f"mcp_{svc_name}")
 
     # Convergence to memory_retrieve
     builder.add_edge("knowledge_retrieve", "memory_retrieve")

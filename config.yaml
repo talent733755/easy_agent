@@ -40,6 +40,36 @@ search:
   provider: "tavily"
   tavily_api_key: "${TAVILY_API_KEY}"
 
+agents:
+  beauty:
+    name: "娇莉芙美容助手"
+    icon: "💆"
+    badge: ""
+    description: "客户分析 · 知识检索 · MCP"
+    type: "graph"
+  training:
+    name: "智能对练"
+    icon: ""
+    badge: ""
+    description: "销售/消耗/售后场景模拟训练"
+    type: "training"
+  xiaohongshu:
+    name: "小红书文案"
+    icon: "📕"
+    badge: "Coze"
+    description: "种草笔记 & 爆款标题"
+    type: "workflow"
+    endpoint: "${COZE_XHS_URL}"
+    api_key: "${COZE_API_KEY}"
+  poster:
+    name: "海报生成"
+    icon: "🎨"
+    badge: "Coze"
+    description: "营销海报 & 活动图"
+    type: "workflow"
+    endpoint: "${COZE_POSTER_URL}"
+    api_key: "${COZE_API_KEY}"
+
 agent:
   max_iterations: 15
   context_compression_threshold: 0.7
@@ -87,6 +117,14 @@ beauty:
           description: "查客户消费记录。参数: customer_id (客户ID，如'C001')"
         - name: get_service_history
           description: "查客户服务历史。参数: customer_id (客户ID)"
+    user_profile:
+      name: "user_profile"
+      url: "http://localhost:3001/user_profile"
+      timeout: 15
+      intent: "query_customer"
+      endpoints:
+        - name: get_user_info
+          description: "查用户档案（SAAS系统）。参数: user_id (用户ID，如'468388') 或 mobile (手机号)"
 
   web:
     host: "0.0.0.0"

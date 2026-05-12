@@ -1,37 +1,71 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Easy Agent - Chat</title>
+    <title>Easy Agent</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <header class="header">
-        <h1>Easy Agent</h1>
+
+<!-- Sidebar -->
+<aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <div class="sidebar-logo">Easy <span>Agent</span></div>
+        <button class="sidebar-toggle" id="sidebar-toggle" title="收起菜单">◀</button>
+    </div>
+
+    <div class="agents-section" id="agents-section">
+        <div class="section-label">🏠 智能体</div>
+        <!-- Populated by JS -->
+    </div>
+
+    <div class="history-section" id="history-section">
+        <div class="section-label">💬 历史对话</div>
+        <!-- Populated by JS -->
+    </div>
+
+    <div class="sidebar-footer">
+        <button class="new-chat-btn" id="new-chat-btn">+ 新对话</button>
+    </div>
+</aside>
+
+<!-- Main Area -->
+<div class="main-area">
+    <div class="top-bar">
+        <button class="menu-btn" id="menu-btn">☰</button>
+        <div class="agent-tag" id="current-agent-tag">
+            <span class="dot"></span>
+            <span id="current-agent-name">加载中...</span>
+        </div>
         <div class="status">
             <span class="status-dot" id="status-dot"></span>
             <span id="status-text">Connecting...</span>
             <span id="session-display"></span>
         </div>
-    </header>
+    </div>
 
     <main class="chat-container" id="chat-container">
-        <!-- Messages will be added here dynamically -->
+        <div class="empty-state" id="empty-state">
+            <div class="icon">💬</div>
+            <div class="title">开始新对话</div>
+            <div class="hint" id="empty-hint">选择一个智能体，输入你的需求</div>
+        </div>
     </main>
 
     <footer class="input-container">
         <div class="input-wrapper">
             <textarea
                 id="message-input"
-                placeholder="Type a message... (Shift+Enter for new line)"
+                placeholder="输入消息... (Shift+Enter 换行)"
                 rows="1"
                 autofocus
             ></textarea>
-            <button id="send-button" disabled>Send</button>
+            <button id="send-button" disabled>发送</button>
         </div>
     </footer>
+</div>
 
-    <script src="/static/chat.js"></script>
+<script src="/static/chat.js"></script>
 </body>
 </html>

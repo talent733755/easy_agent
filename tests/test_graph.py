@@ -1,6 +1,44 @@
 from langchain_core.messages import HumanMessage, AIMessage
 from src.state import AgentState
-from src.graph import build_graph
+from src.graph import build_graph, _build_mcp_intent_routes, _route_intent
+
+
+class TestMCPRouting:
+    """Test MCP intent routing supports multiple services per intent."""
+
+    def test_single_service_per_intent(self):
+        class Svc:
+            def __init__(self, intent):
+                self.intent = intent
+
+        routes = _build_mcp_intent_routes({"svc_a": Svc("query_a")})
+        assert routes == {"query_a": "mcp_svc_a"}
+
+    def test_multiple_services_share_intent(self):
+        class Svc:
+            def __init__(self, intent):
+                self.intent = intent
+
+        configs = {
+            "customer": Svc("query_customer"),
+            "user_profile": Svc("query_customer"),
+        }
+        routes = _build_mcp_intent_routes(configs)
+        assert routes["query_customer"] == ["mcp_customer", "mcp_user_profile"]
+
+    def test_route_intent_returns_list_for_shared_intent(self):
+        mcp_routes = {"query_customer": ["mcp_customer", "mcp_user_profile"]}
+        state = {"intent": "query_customer"}
+        result = _route_intent(state, mcp_routes)
+        assert isinstance(result, list)
+        assert "mcp_customer" in result
+        assert "mcp_user_profile" in result
+
+    def test_route_intent_returns_string_for_single_service(self):
+        mcp_routes = {"query_single": "mcp_single"}
+        state = {"intent": "query_single"}
+        result = _route_intent(state, mcp_routes)
+        assert result == "mcp_single"
 
 
 class TestGraphStructure:
@@ -55,7 +93,7 @@ class TestGraphInvocation:
         # Mock beauty nodes at their source module
         mock_intent_result = {"intent": "general", "customer_name": "", "query_topic": ""}
         mock_knowledge_result = {"knowledge_results": []}
-        mock_mcp_result = {"customer_context": {}, "mcp_results": {}}
+        mock_mcp_result = {"mcp_results": {}}
 
         mock_mcp_node_fn = MagicMock(return_value=mock_mcp_result)
 
@@ -88,3 +126,59 @@ class TestGraphInvocation:
         result = graph.invoke(state, config)
         assert len(result["messages"]) > 1
         assert "Hello" in str(result["messages"][-1].content)
+
+
+class TestTrainingGraph:
+    """Test the training graph builds and has correct structure."""
+
+    def test_training_graph_builds(self):
+        from src.training_graph import build_training_graph
+        graph = build_training_graph(checkpointer=None)
+        assert graph is not None
+
+    def test_training_graph_has_required_nodes(self):
+        from src.training_graph import build_training_graph
+        graph = build_training_graph(checkpointer=None)
+        if hasattr(graph, 'builder'):
+            node_names = list(graph.builder.nodes.keys())
+        else:
+            node_names = list(graph.nodes.keys()) if hasattr(graph, 'nodes') else []
+        assert "welcome" in node_names, f"welcome not in nodes: {node_names}"
+        assert "setup" in node_names, f"setup not in nodes: {node_names}"
+        assert "roleplay" in node_names, f"roleplay not in nodes: {node_names}"
+        assert "evaluate" in node_names, f"evaluate not in nodes: {node_names}"
+        assert "dispatch" in node_names, f"dispatch not in nodes: {node_names}"
+
+    def test_training_welcome_outputs_message(self):
+        from src.training_graph import build_training_graph
+        from langgraph.checkpoint.memory import MemorySaver
+
+        graph = build_training_graph(checkpointer=MemorySaver())
+        state: AgentState = {
+            "messages": [],
+            "tools": [],
+            "context_window": {"used_tokens": 0, "max_tokens": 128000, "threshold": 0.7},
+            "memory_context": "",
+            "user_profile": "",
+            "agent_notes": "",
+            "pending_human_input": False,
+            "iteration_count": 0,
+            "max_iterations": 15,
+            "nudge_counter": 0,
+            "provider_name": "zhipu",
+            "intent": "",
+            "customer_context": {},
+            "knowledge_results": [],
+            "mcp_results": {},
+            "training_phase": "",
+            "training_scenario": "",
+            "training_context": {},
+            "training_score": {},
+            "training_history": [],
+        }
+        config = {"configurable": {"thread_id": "test-training-1"}}
+        result = graph.invoke(state, config)
+        assert len(result["messages"]) > 0
+        last_msg = result["messages"][-1]
+        assert "开始陪练" in str(last_msg.content)
+        assert result["training_phase"] == "welcome"

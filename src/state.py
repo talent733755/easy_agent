@@ -27,3 +27,10 @@ class AgentState(TypedDict):
     customer_context: dict         # 当前客户信息缓存
     knowledge_results: list        # RAG 检索结果
     mcp_results: Annotated[dict, _merge_dicts]  # MCP 调用结果（支持并行合并）
+
+    # Training Agent 字段
+    training_phase: str            # welcome | setup | roleplay | evaluate
+    training_scenario: str         # 当前场景 ID 或描述
+    training_context: dict         # 场景上下文（档案、知识库引用等）
+    training_score: dict           # 评分结果
+    training_history: list         # 本轮对话记录
